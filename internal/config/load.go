@@ -1,0 +1,261 @@
+package config
+
+import (
+	_ "embed"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+//go:embed default.conf
+var defaultConf string
+
+// Default returns the embedded built-in configuration text.
+func Default() string { return defaultConf }
+
+// Level is one layer of configuration.
+//
+// Layers cascade the way git's do: every one that exists is read, in order, and
+// a later setting replaces an earlier one. A per-directory file can therefore
+// adjust one option without restating everything above it.
+type Level int
+
+const (
+	// Builtin is the configuration embedded in the binary.
+	Builtin Level = iota
+	// System applies to every user on the machine.
+	System
+	// Global applies to this user.
+	Global
+	// Local applies to the working directory.
+	Local
+)
+
+func (l Level) String() string {
+	switch l {
+	case Builtin:
+		return "builtin"
+	case System:
+		return "system"
+	case Global:
+		return "global"
+	default:
+		return "local"
+	}
+}
+
+// ParseLevel reads a level name.
+func ParseLevel(s string) (Level, error) {
+	switch strings.ToLower(s) {
+	case "system":
+		return System, nil
+	case "global":
+		return Global, nil
+	case "local":
+		return Local, nil
+	}
+	return Global, fmt.Errorf("unknown level %q, want system, global or local", s)
+}
+
+// SystemPath is the machine-wide configuration file.
+const SystemPath = "/etc/lv/config"
+
+// LocalName is the per-directory configuration file.
+const LocalName = ".lvconfig"
+
+// Path returns the file backing a level.
+func Path(l Level) (string, error) {
+	switch l {
+	case System:
+		return SystemPath, nil
+	case Global:
+		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+			return filepath.Join(x, "lv", "config"), nil
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".config", "lv", "config"), nil
+	case Local:
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(wd, LocalName), nil
+	}
+	return "", fmt.Errorf("%s has no file", l)
+}
+
+// Layers lists the cascading layers, lowest priority first.
+func Layers() []Level { return []Level{System, Global, Local} }
+
+// LoadOptions controls configuration discovery.
+type LoadOptions struct {
+	// Path, if set, is read last and so wins over every layer.
+	Path string
+	// NoUser skips every layer outside the binary.
+	NoUser bool
+}
+
+// Load builds the effective configuration by cascading the layers.
+func Load(opt LoadOptions) (*Config, error) {
+	c := New()
+	if err := c.Parse("<builtin>", defaultConf); err != nil {
+		return nil, fmt.Errorf("built-in config: %w", err)
+	}
+
+	if !opt.NoUser {
+		for _, l := range Layers() {
+			p, err := Path(l)
+			if err != nil {
+				continue // no home directory, no working directory: skip
+			}
+			if err := c.readIfPresent(p); err != nil {
+				return nil, err
+			}
+		}
+		if p := os.Getenv("LV_CONFIG"); p != "" {
+			if err := c.ParseFile(p); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if opt.Path != "" {
+		if err := c.ParseFile(opt.Path); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := c.Resolve(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *Config) readIfPresent(path string) error {
+	if fi, err := os.Stat(path); err != nil || fi.IsDir() {
+		return nil
+	}
+	return c.ParseFile(path)
+}
+
+// Write stores a setting in a level's file, replacing any existing entry for
+// the same key and leaving the rest of the file, comments included, untouched.
+func Write(l Level, name, value string) (string, error) {
+	spec, ok := settingIndex[name]
+	if !ok {
+		return "", fmt.Errorf("unknown setting %q", name)
+	}
+	if err := validate(spec, value); err != nil {
+		return "", err
+	}
+
+	path, err := Path(l)
+	if err != nil {
+		return "", err
+	}
+	lines, err := readLines(path)
+	if err != nil {
+		return "", err
+	}
+
+	entry := fmt.Sprintf("set %s %s", name, quoteWord(value))
+	replaced := false
+	for i, line := range lines {
+		if settingOnLine(line) == name {
+			lines[i] = entry
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines, entry)
+	}
+	return path, writeLines(path, lines)
+}
+
+// Unset removes a setting from a level's file.
+func Unset(l Level, name string) (string, error) {
+	if _, ok := settingIndex[name]; !ok {
+		return "", fmt.Errorf("unknown setting %q", name)
+	}
+	path, err := Path(l)
+	if err != nil {
+		return "", err
+	}
+	lines, err := readLines(path)
+	if err != nil {
+		return "", err
+	}
+
+	out := lines[:0]
+	found := false
+	for _, line := range lines {
+		if settingOnLine(line) == name {
+			found = true
+			continue
+		}
+		out = append(out, line)
+	}
+	if !found {
+		return path, fmt.Errorf("%s is not set in %s", name, l)
+	}
+	return path, writeLines(path, out)
+}
+
+// settingOnLine returns the setting a `set` line assigns, or "".
+func settingOnLine(line string) string {
+	f := strings.Fields(strings.TrimSpace(line))
+	if len(f) >= 2 && f[0] == "set" {
+		return f[1]
+	}
+	return ""
+}
+
+func readLines(path string) ([]string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	text := strings.TrimSuffix(string(b), "\n")
+	if text == "" {
+		return nil, nil
+	}
+	return strings.Split(text, "\n"), nil
+}
+
+func writeLines(path string, lines []string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	body := ""
+	if len(lines) > 0 {
+		body = strings.Join(lines, "\n") + "\n"
+	}
+	// Write and rename so an interrupted save cannot truncate the file.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.WriteString(body); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Chmod(name, 0o644); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Rename(name, path)
+}

@@ -1,0 +1,160 @@
+// Package highlight styles log lines.
+//
+// Two layers produce byte-range spans over a line: syntax profiles, which
+// recognise the shape of common log formats, and user highlights, which mark
+// whatever the user is currently hunting for. User highlights are emitted last
+// and therefore win where they overlap.
+//
+// There is deliberately no programming-language support here. The formats that
+// matter are kernel ring buffers, syslog, journal output and JSON records.
+package highlight
+
+import (
+	"path/filepath"
+	"regexp"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/filter"
+)
+
+// Span is a styled byte range within a line.
+type Span struct {
+	Start, End int
+	Style      tcell.Style
+}
+
+// Rule is one syntax pattern within a profile.
+type Rule struct {
+	Re        *regexp.Regexp
+	Group     int // 0 styles the whole match, N styles capture group N
+	Style     tcell.Style
+	StyleName string
+}
+
+// Profile is a named set of syntax rules for one family of log file.
+type Profile struct {
+	Name   string
+	Globs  []string
+	Detect *regexp.Regexp
+	Rules  []Rule
+}
+
+// User is a runtime highlight: a pattern the user asked to see marked.
+type User struct {
+	M       filter.Matcher
+	Style   tcell.Style
+	Pattern string
+	Label   string // the palette slot name, for the status readout
+}
+
+// Engine computes spans for a line. It is not safe for concurrent use; the UI
+// owns one and reuses its scratch buffers across every line of every frame.
+type Engine struct {
+	Profile *Profile
+	Users   []User
+
+	// MaxScan bounds how many bytes of a line are examined. A single 10 MB JSON
+	// record must not be allowed to stall a frame; the rest renders unstyled.
+	MaxScan int
+	// MaxMatches bounds repeats of one rule within a line.
+	MaxMatches int
+
+	spans []Span
+	locs  [][2]int
+}
+
+// NewEngine returns an engine with sane bounds.
+func NewEngine(maxScan, maxMatches int) *Engine {
+	if maxScan <= 0 {
+		maxScan = 4096
+	}
+	if maxMatches <= 0 {
+		maxMatches = 64
+	}
+	return &Engine{MaxScan: maxScan, MaxMatches: maxMatches}
+}
+
+// Spans returns the styled ranges for line. The result is valid until the next
+// call.
+func (e *Engine) Spans(line []byte) []Span {
+	if len(line) > e.MaxScan {
+		line = line[:e.MaxScan]
+	}
+	e.spans = e.spans[:0]
+
+	if e.Profile != nil {
+		for i := range e.Profile.Rules {
+			e.addRule(line, &e.Profile.Rules[i])
+		}
+	}
+	for i := range e.Users {
+		u := &e.Users[i]
+		e.locs = u.M.Find(line, e.locs[:0], e.MaxMatches)
+		for _, l := range e.locs {
+			e.spans = append(e.spans, Span{Start: l[0], End: l[1], Style: u.Style})
+		}
+	}
+	return e.spans
+}
+
+func (e *Engine) addRule(line []byte, r *Rule) {
+	if r.Group <= 0 {
+		for _, loc := range r.Re.FindAllIndex(line, e.MaxMatches) {
+			if loc[1] > loc[0] {
+				e.spans = append(e.spans, Span{Start: loc[0], End: loc[1], Style: r.Style})
+			}
+		}
+		return
+	}
+	g := 2 * r.Group
+	for _, m := range r.Re.FindAllSubmatchIndex(line, e.MaxMatches) {
+		if g+1 < len(m) && m[g] >= 0 && m[g+1] > m[g] {
+			e.spans = append(e.spans, Span{Start: m[g], End: m[g+1], Style: r.Style})
+		}
+	}
+}
+
+// Select picks the profile for a file: an explicit name wins, then a filename
+// glob, then a content sniff against the head of the file, then "generic".
+func Select(profiles []*Profile, name, path string, head []byte) *Profile {
+	if name != "" {
+		for _, p := range profiles {
+			if p.Name == name {
+				return p
+			}
+		}
+		return nil
+	}
+
+	base := filepath.Base(path)
+	for _, p := range profiles {
+		for _, g := range p.Globs {
+			if ok, err := filepath.Match(g, base); err == nil && ok {
+				return p
+			}
+		}
+	}
+
+	for _, p := range profiles {
+		if p.Detect != nil && p.Detect.Match(head) {
+			return p
+		}
+	}
+
+	for _, p := range profiles {
+		if p.Name == "generic" {
+			return p
+		}
+	}
+	return nil
+}
+
+// Names lists the available profile names, for the help screen and for
+// validating `--profile`.
+func Names(profiles []*Profile) []string {
+	out := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		out = append(out, p.Name)
+	}
+	return out
+}
