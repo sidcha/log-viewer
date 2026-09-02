@@ -15,6 +15,8 @@ func main() {
 		case "-V", "--version", "version":
 			fmt.Printf("lv %s\n", version)
 			return
+		case "config":
+			os.Exit(runConfig(os.Args[2:]))
 		}
 	}
 	usage()

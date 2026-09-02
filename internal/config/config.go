@@ -109,6 +109,9 @@ type Config struct {
 	presets  []Preset
 	loaded   []string
 	sourced  map[string]bool
+	// origins records which file last set each value, so a surprising
+	// effective value can be traced back to the layer responsible.
+	origins map[string]string
 }
 
 // New returns a configuration holding only the built-in defaults for settings.
@@ -119,6 +122,10 @@ func New() *Config {
 		binds:   make(map[Key]Command),
 		styles:  make(map[string]tcell.Style),
 		sourced: make(map[string]bool),
+		origins: make(map[string]string),
+	}
+	for _, sp := range Settings {
+		c.origins[sp.Name] = Builtin.String()
 	}
 	for _, s := range Settings {
 		c.values[s.Name] = s.Def
@@ -176,6 +183,14 @@ func (c *Config) Set(name, value string) error {
 	}
 	c.values[name] = value
 	return nil
+}
+
+// Origin names the file that last set a value, or the built-in level.
+func (c *Config) Origin(name string) string {
+	if o, ok := c.origins[name]; ok {
+		return o
+	}
+	return Builtin.String()
 }
 
 // Case is the configured pattern case sensitivity.
@@ -299,6 +314,7 @@ func (c *Config) directive(st stmt) error {
 		if err := c.Set(w[1], w[2]); err != nil {
 			return st.errf("%v", err)
 		}
+		c.origins[w[1]] = st.File
 
 	case "bind":
 		if len(w) < 3 {
