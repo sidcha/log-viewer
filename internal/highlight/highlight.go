@@ -1,8 +1,8 @@
 // Package highlight styles log lines.
 //
 // Two layers produce byte-range spans over a line: syntax profiles, which
-// recognise the shape of common log formats, and user highlights, which mark
-// whatever the user is currently hunting for. User highlights are emitted last
+// recognise the shape of common log formats, and rule marks, which show where
+// the patterns the user is hunting for actually matched. Marks are emitted last
 // and therefore win where they overlap.
 //
 // There is deliberately no programming-language support here. The formats that
@@ -39,19 +39,18 @@ type Profile struct {
 	Rules  []Rule
 }
 
-// User is a runtime highlight: a pattern the user asked to see marked.
-type User struct {
-	M       filter.Matcher
-	Style   tcell.Style
-	Pattern string
-	Label   string // the palette slot name, for the status readout
+// Mark is a pattern whose matches are painted wherever they appear, carrying
+// the colour assigned to the rule that asked for it.
+type Mark struct {
+	M     filter.Matcher
+	Style tcell.Style
 }
 
 // Engine computes spans for a line. It is not safe for concurrent use; the UI
 // owns one and reuses its scratch buffers across every line of every frame.
 type Engine struct {
 	Profile *Profile
-	Users   []User
+	Marks   []Mark
 
 	// MaxScan bounds how many bytes of a line are examined. A single 10 MB JSON
 	// record must not be allowed to stall a frame; the rest renders unstyled.
@@ -87,11 +86,11 @@ func (e *Engine) Spans(line []byte) []Span {
 			e.addRule(line, &e.Profile.Rules[i])
 		}
 	}
-	for i := range e.Users {
-		u := &e.Users[i]
-		e.locs = u.M.Find(line, e.locs[:0], e.MaxMatches)
+	for i := range e.Marks {
+		mk := &e.Marks[i]
+		e.locs = mk.M.Find(line, e.locs[:0], e.MaxMatches)
 		for _, l := range e.locs {
-			e.spans = append(e.spans, Span{Start: l[0], End: l[1], Style: u.Style})
+			e.spans = append(e.spans, Span{Start: l[0], End: l[1], Style: mk.Style})
 		}
 	}
 	return e.spans
