@@ -1,6 +1,6 @@
 # lv
 
-A terminal log viewer for files that do not fit in memory.
+A terminal log viewer for files that do not fit in memory, with vi's key map.
 
 `lv` follows a growing log, marks what you care about, hides the lines you do
 not, and writes the result back out. It is built for the case where the file is
@@ -29,6 +29,90 @@ make release    # nix build .#lv
 
 With direnv, `direnv allow` puts the toolchain on your path directly.
 
+## Keys
+
+The default map is vi's, so most of it should already be in your fingers.
+Everything can be replaced by name in your own config.
+
+### Motions
+
+Motions move a **cursor**; the window follows only when the cursor would leave
+it. Type a count before any of them to repeat it — `5j`, `12k`, `42G`.
+
+| | |
+|---|---|
+| `h` `j` `k` `l` | left, down, up, right |
+| `w` `b` `e` | word forward, word back, end of word |
+| `0` `^` `$` | start of line, first non-blank, end of line |
+| `gg` `G` | first line, last line (`42G` for line 42) |
+| `H` `M` `L` | top, middle, bottom of the window |
+| `C-e` `C-y` | scroll the window down / up |
+| `C-d` `C-u` | half page down / up |
+| `C-f` `C-b` `Space` | page down / up |
+| `zz` `zt` `zb` | redraw with the cursor centred, at the top, at the bottom |
+
+### Selecting and copying
+
+| | |
+|---|---|
+| `v` `V` | character-wise / line-wise selection |
+| `y` | copy the selection (while selecting) |
+| `yy` | copy the current line; `3yy` for three |
+| `Esc` | leave visual mode |
+
+Copying uses the terminal's own clipboard escape, so it works over ssh and
+inside a container where there is no X display or Wayland socket to reach. If
+your terminal has that turned off, set `clipboard-command` to `wl-copy`,
+`pbcopy` or similar. A yank out of a filtered view copies what is on screen, not
+what is underneath it.
+
+`y` is only a command once something is selected; otherwise it is the first half
+of `yy`, exactly as in vim. Visual mode has its own binding table, so either can
+be rebound independently.
+
+### Searching and rules
+
+| | |
+|---|---|
+| `/` `?` | search forward / back — previews as you type |
+| `n` `N` | next / previous match |
+| `*` `#` | search for the word under the cursor |
+| `&` `!` `m` | add an only / never / highlight rule |
+| `=` | the rule list: edit, enable, disable, delete |
+| `\` | disable every rule for a moment |
+| `C-p` `C-x` `M-*` | remove the last rule, every rule, every highlight |
+
+### View and other
+
+| | |
+|---|---|
+| `F` | follow the end of the file |
+| `zw` `zn` `zs` | wrap, line numbers, pin the status line |
+| `zr` `C-l` | re-index, repaint |
+| `S` | save the current view to a file |
+| `:` | command line |
+| `F1` | help |
+| `q` `ZZ` | quit |
+
+### The command line
+
+`:` works the way vi's does, including the aliases worth having:
+
+```
+:42               go to line 42
+:$                go to the end
+:set wrap         toggle a setting; :set tab-width 4 to assign one
+:only ERROR       add a rule
+:never healthz
+:hl OOM
+:noh              clear highlights
+:w out.log        write the current view
+:q                quit
+```
+
+Tab completes command names. Every key binding is a named command, so anything
+a key does can be typed here, and anything typed here can be bound.
+
 ## Rules
 
 Filtering and marking are the same thing with three actions:
@@ -37,19 +121,34 @@ Filtering and marking are the same thing with three actions:
 |---|---|---|
 | `only` | `&` | show only lines matching the pattern |
 | `never` | `!` | never show lines matching the pattern |
-| `highlight` | `*` | mark matches, without changing which lines are shown |
+| `highlight` | `m` | mark matches, without changing which lines are shown |
 
 Rules form one flat list, evaluated in a single pass over the file. A line is
 shown when it matches at least one `only` rule (or there are none) and matches
 no `never` rule — that is, `grep -e … | grep -v …`.
 
-Press `=` to see the list, `Space` to toggle a rule, `d` to delete one, `\` to
-disable everything for a moment without losing what you built up.
-
 Every rule gets a colour so you can see which one caught which line. Colours are
 picked at random but nudged apart: several candidate hues are drawn and the one
-furthest from the colours already on screen wins, so six highlights stay
-distinguishable instead of colliding the way plain random assignment does.
+furthest from the colours already on screen wins, so half a dozen highlights
+stay distinguishable instead of colliding the way plain random assignment does.
+
+### Managing them
+
+`=` opens the rule list. It is the place to change your mind about a filter
+without rebuilding it:
+
+| | |
+|---|---|
+| `Space` `Enter` | enable / disable the rule |
+| `e` | edit its pattern, with a live preview |
+| `a` | cycle it between only, never and highlight |
+| `r` | give it a different colour |
+| `d` | delete it |
+| `A` `D` | enable / disable every rule |
+
+Disabling is not deleting: `\` turns everything off for a glance at the raw log
+and back on again, and a disabled rule keeps its place, its colour and its
+pattern.
 
 ### Preview
 
@@ -58,8 +157,13 @@ on screen — matching text painted in the colour the rule is about to take, lin
 the rule would remove dimmed, and a count beside the prompt:
 
 ```
-show only: ERROR    2 of 7 shown
+only: ERROR    2 of 7 shown
 ```
+
+<kbd>Tab</kbd> cycles what <kbd>Enter</kbd> will do — search, only, never,
+highlight — keeping the pattern already typed. `/` starts on search, so it marks
+matches and jumps without touching which lines are shown; one Tab turns the same
+pattern into a filter.
 
 An unbalanced bracket says so while you type rather than after you commit. Over
 a very large log a filter is slow to undo, and a pattern that looked right often
@@ -71,33 +175,6 @@ which is much faster over a large file. Case follows `set case`, which defaults
 to `smart`: insensitive unless you type a capital letter.
 
 [re2]: https://github.com/google/re2/wiki/Syntax
-
-## Keys
-
-All of these are configurable; this is the default map.
-
-| | |
-|---|---|
-| `j` `k` `↑` `↓` | line up / down |
-| `h` `l` `←` `→` `0` | scroll sideways, back to column 0 |
-| `Space` `C-f` `PgDn` / `b` `C-b` `PgUp` | page down / up |
-| `C-d` `C-u` | half page down / up |
-| `g` `G` `Home` `End` | start / end |
-| `L` | go to a line number |
-| `/` `?` `n` `N` | search forward / back, next / previous |
-| `&` `!` `*` | add an only / never / highlight rule |
-| `=` `C-p` `C-x` `M-*` | list rules, remove the last, remove all, remove highlights |
-| `\` | disable all rules for a moment |
-| `F` | follow the end of the file |
-| `w` `#` `s` | wrap, line numbers, pin the status line |
-| `S` | save the current view to a file |
-| `r` `C-r` | re-index, repaint |
-| `:` | command prompt |
-| `Esc` | close an overlay, or cancel a running search or save |
-| `q` `C-c` | quit |
-
-Anything a key can do, the `:` prompt can do too, with the same names — so
-`:filter-never 'health ?check'` works, and so does binding it.
 
 ## Configuration
 
@@ -133,12 +210,17 @@ The file syntax is tmux-flavoured: one directive per line, `#` comments,
 ```conf
 set follow on
 set case sensitive
+set scroll-off 5
+set clipboard-command wl-copy
 
+# Key sequences are written as vim writes them.
+bind gg        goto-start
+bind <C-d>     half-page-down
 unbind q
-bind C-q quit
-bind M-e filter-never 'health ?check'
+bind ZQ        quit
+bind-visual y  yank
 
-rule never  'GET /healthz'
+rule never     'GET /healthz'
 rule highlight 'OOM|oom-killer' color=#ff5555
 
 style syntax.level.error fg=#ff0000 bold
@@ -151,12 +233,16 @@ profile myapp {
 }
 ```
 
+A binding is one key (`C-a`, `PgUp`), a short bare sequence (`gg`, `zz`), or vim
+notation where anything in angle brackets is a single key (`<C-w>s`). A longer
+bare run is rejected rather than silently bound as a sequence, so a misspelled
+key name tells you about itself.
+
 Because `#` starts a comment when it begins a word, a `#` or `{` inside a key
-specification or a pattern must be quoted: `bind '#' line-numbers-toggle`.
+specification or a pattern must be quoted: `bind '#' search-word-back`.
 
 Unknown settings, commands, styles and keys are errors at startup rather than
-silent no-ops, so a typo tells you about itself. `lv --dump-config` prints the
-merged result, re-parseable as-is.
+silent no-ops. `lv --dump-config` prints the merged result, re-parseable as-is.
 
 ## Syntax highlighting
 
@@ -180,6 +266,22 @@ Indexing, filtering, searching and saving run in the background, publish partial
 results as they go, and are cancellable with <kbd>Esc</kbd>. The first screen is
 drawn as soon as the first block is indexed, not when the file has been read.
 Adding a highlight does not disturb a filter scan already in progress.
+
+### Measured
+
+A 10 GiB / 102,216,113-line log on a Raspberry Pi 4 with 3.9 GiB of RAM — so the
+file is 2.7× the machine's total memory — reading from SD at ~94 MB/s:
+
+| | |
+|---|---|
+| Time to a usable first screen | immediate; the line count climbs while you read |
+| Full index | 1 m 56 s, 88 MiB/s — disk-bound, not CPU-bound |
+| Index size for 102 M lines | **779 KiB** (99,821 checkpoints). A dense table would be 818 MB |
+| Filtering to 14,602,301 matches | 1 m 55 s, 89 MiB/s, streaming |
+| **Peak RSS, interactive session** | **16.6 MiB** while 17.2 GiB was read through a concurrent index and filter |
+
+Line counts and filter results were checked against an independent scan; see
+`make scale`.
 
 ### Following
 
@@ -205,6 +307,9 @@ input from `/dev/tty`, not stdin, so `producer | lv` stays interactive.
 tmux new-window -n logs 'lv -f /var/log/syslog'
 tmux display-popup -E -w 90% -h 90% 'lv /var/log/kern.log'
 ```
+
+For `y` to reach your clipboard through tmux, tmux needs `set -g set-clipboard
+on`; otherwise point `clipboard-command` at an external program.
 
 A pipe is spooled to an unlinked temporary file, so seeking, filtering and
 saving work on piped input exactly as they do on a file, and nothing is left

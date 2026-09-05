@@ -398,3 +398,172 @@ func TestRulesOverlayListsEveryAction(t *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------ managing the rules
+
+func openRules(t *testing.T, a *App) {
+	t.Helper()
+	run(a, "filter-list")
+	if a.ov == nil || a.ov.kind != ovRules {
+		t.Fatal("the rules overlay did not open")
+	}
+}
+
+func TestRuleListEnableAndDisable(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+	full := a.viewLen()
+
+	a.addRule(filter.Only, "ERROR", filter.Color{})
+	waitFiltered(t, a)
+	filtered := a.viewLen()
+	if filtered >= full {
+		t.Fatalf("the filter had no effect: %d of %d", filtered, full)
+	}
+
+	openRules(t, a)
+	keys(a, " ") // disable the selected rule
+	waitFiltered(t, a)
+	if a.viewLen() != full {
+		t.Fatalf("disabling the rule left %d lines, want all %d", a.viewLen(), full)
+	}
+	if a.rules.Len() != 1 {
+		t.Fatal("disabling removed the rule instead of turning it off")
+	}
+	if a.rules.All()[0].Enabled {
+		t.Error("the rule is still marked enabled")
+	}
+
+	keys(a, " ") // and back on
+	waitFiltered(t, a)
+	if a.viewLen() != filtered {
+		t.Fatalf("re-enabling left %d lines, want %d", a.viewLen(), filtered)
+	}
+}
+
+func TestRuleListDelete(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Highlight, "bad", filter.Color{})
+	waitFiltered(t, a)
+
+	openRules(t, a)
+	keys(a, "j") // move to the second rule
+	keys(a, "d")
+
+	if a.rules.Len() != 1 {
+		t.Fatalf("rules = %d, want 1", a.rules.Len())
+	}
+	if a.rules.All()[0].M.Pattern() != "ERROR" {
+		t.Errorf("the wrong rule was deleted; left %q", a.rules.All()[0].M.Pattern())
+	}
+}
+
+func TestRuleListEditPattern(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+	a.addRule(filter.Only, "ERROR", filter.Color{})
+	waitFiltered(t, a)
+	color := a.rules.All()[0].Color
+
+	openRules(t, a)
+	keys(a, "e")
+	if a.prompt == nil || a.prompt.kind != pRuleEdit {
+		t.Fatal("e did not open the rule for editing")
+	}
+	if string(a.prompt.buf) != "ERROR" {
+		t.Fatalf("the prompt was not pre-filled: %q", a.prompt.buf)
+	}
+	if a.prev == nil {
+		t.Fatal("editing a rule should preview the change")
+	}
+
+	press(a, tcell.KeyCtrlU)
+	typeInto(a, "INFO")
+	press(a, tcell.KeyEnter)
+	waitFiltered(t, a)
+
+	rules := a.rules.All()
+	if len(rules) != 1 {
+		t.Fatalf("editing changed the rule count to %d", len(rules))
+	}
+	if rules[0].M.Pattern() != "INFO" {
+		t.Errorf("pattern = %q, want INFO", rules[0].M.Pattern())
+	}
+	if rules[0].Action != filter.Only {
+		t.Errorf("editing changed the action to %v", rules[0].Action)
+	}
+	if rules[0].Color != color {
+		t.Error("editing changed the rule's colour")
+	}
+
+	// And the view really follows the edited rule.
+	ln, err := a.activeView().At(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ln.Text), "INFO") {
+		t.Errorf("first visible line is %q, want an INFO line", ln.Text)
+	}
+}
+
+func TestRuleListCycleAction(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+	a.addRule(filter.Only, "ERROR", filter.Color{})
+	waitFiltered(t, a)
+
+	openRules(t, a)
+	keys(a, "a")
+	if got := a.rules.All()[0].Action; got != filter.Never {
+		t.Fatalf("action = %v, want never", got)
+	}
+	keys(a, "a")
+	if got := a.rules.All()[0].Action; got != filter.Highlight {
+		t.Fatalf("action = %v, want highlight", got)
+	}
+	waitFiltered(t, a)
+	if a.filt != nil {
+		t.Error("a highlight-only rule set should not be filtering")
+	}
+	keys(a, "a")
+	if got := a.rules.All()[0].Action; got != filter.Only {
+		t.Fatalf("action = %v, want only again", got)
+	}
+}
+
+func TestRuleListRecolour(t *testing.T) {
+	a, _ := newTestApp(t, numbered(20))
+	a.addRule(filter.Highlight, "ERROR", filter.Color{})
+	before := a.rules.All()[0].Color
+
+	openRules(t, a)
+	keys(a, "r")
+	after := a.rules.All()[0].Color
+	if after == (filter.Color{}) {
+		t.Fatal("recolour cleared the colour")
+	}
+	if after == before {
+		t.Error("recolour produced the same colour")
+	}
+}
+
+func TestRuleListBulkToggle(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Highlight, "bad", filter.Color{})
+	waitFiltered(t, a)
+
+	openRules(t, a)
+	keys(a, "D")
+	waitFiltered(t, a)
+	for i, r := range a.rules.All() {
+		if r.Enabled {
+			t.Errorf("rule %d is still enabled after D", i)
+		}
+	}
+	keys(a, "A")
+	waitFiltered(t, a)
+	for i, r := range a.rules.All() {
+		if !r.Enabled {
+			t.Errorf("rule %d is still disabled after A", i)
+		}
+	}
+}

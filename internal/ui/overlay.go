@@ -297,7 +297,7 @@ func (a *App) showHelp() {
 	o := &overlay{kind: ovHelp, title: "lv — key bindings", hint: "Esc close  j/k scroll"}
 
 	groups := map[string][]config.Bind{}
-	for _, b := range a.cfg.Binds() {
+	for _, b := range append(append([]config.Bind{}, a.cfg.Binds()...), a.cfg.VisualBinds()...) {
 		spec, ok := config.LookupCommand(b.Cmd.Name)
 		g := "other"
 		if ok {
@@ -317,8 +317,14 @@ func (a *App) showHelp() {
 
 		// Collapse keys bound to the same command onto one line.
 		byCmd := map[string][]string{}
+		visualOnly := map[string]bool{}
 		var seen []string
 		for _, b := range binds {
+			if b.Visual {
+				visualOnly[b.Cmd.String()] = true
+			} else {
+				delete(visualOnly, b.Cmd.String())
+			}
 			k := b.Cmd.String()
 			if _, ok := byCmd[k]; !ok {
 				seen = append(seen, k)
@@ -331,6 +337,9 @@ func (a *App) showHelp() {
 			if spec, ok := config.LookupCommand(name); ok {
 				help = spec.Help
 			}
+			if visualOnly[cmd] {
+				help = "(while selecting) " + help
+			}
 			o.rows = append(o.rows, ovRow{
 				text: fmt.Sprintf("  %-16s %-22s %s", strings.Join(byCmd[cmd], " "), cmd, help),
 				item: -1,
@@ -339,6 +348,11 @@ func (a *App) showHelp() {
 	}
 
 	o.rows = append(o.rows,
+		ovRow{text: "", item: -1},
+		ovRow{text: "COUNTS AND SEQUENCES", style: "overlay.title", item: -1},
+		ovRow{text: "  Type a number before a motion to repeat it: 5j, 12k, 42G.", style: "overlay.dim", item: -1},
+		ovRow{text: "  : opens the command line; Tab completes command names.", style: "overlay.dim", item: -1},
+		ovRow{text: "  In / and ? Tab switches between search, only, never and highlight.", style: "overlay.dim", item: -1},
 		ovRow{text: "", item: -1},
 		ovRow{text: "CONFIG", style: "overlay.title", item: -1},
 	)
