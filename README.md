@@ -12,6 +12,7 @@ lv /var/log/syslog          # open a file
 lv -f /var/log/kern.log     # follow it, like tail -f
 journalctl -f | lv          # read a pipe
 lv -o ERROR -N healthcheck app.log
+lv -r incident.json app.log  # reuse rules saved earlier
 ```
 
 Press <kbd>F1</kbd> inside `lv` for the key bindings.
@@ -89,10 +90,11 @@ be rebound independently.
 | `F` | follow the end of the file |
 | `zw` `zn` `zs` | wrap, line numbers, pin the status line |
 | `zr` `C-l` | re-index, repaint |
-| `S` | save the current view to a file |
+| `S` `zS` | save the current view / the rules to a file |
 | `:` | command line |
 | `F1` | help |
-| `q` `ZZ` | quit |
+| `q` `ZZ` | quit, offering to save the rules |
+| `ZQ` | quit without asking |
 
 ### The command line
 
@@ -107,7 +109,10 @@ be rebound independently.
 :hl OOM
 :noh              clear highlights
 :w out.log        write the current view
-:q                quit
+:mks rules.json   write the rules
+:source rules.json  load rules from a file
+:q                quit, offering to save the rules
+:q!               quit without asking
 ```
 
 Tab completes command names. Every key binding is a named command, so anything
@@ -149,6 +154,40 @@ without rebuilding it:
 Disabling is not deleting: `\` turns everything off for a glance at the raw log
 and back on again, and a disabled rule keeps its place, its colour and its
 pattern.
+
+### Keeping them
+
+Working out the right filters over an unfamiliar log takes real effort, and that
+effort outlives the session. Rules save to a JSON file:
+
+```sh
+lv -r incident.json /var/log/app.log    # start from a saved set
+```
+
+Quitting with rules that are not on disk asks first — offering to update the
+file they came from, or to write a new one. It stays quiet when there is nothing
+to lose, or when nothing has changed since the file was read, so opening a log
+and just looking at it is untouched. `ZQ` and `:q!` skip the question.
+
+The format is plain enough to write by hand and to review in a diff; everything
+but the action and the pattern is optional:
+
+```json
+{
+  "version": 1,
+  "case": "smart",
+  "rules": [
+    { "action": "only",      "pattern": "ERROR", "color": "#8decc8" },
+    { "action": "never",     "pattern": "GET /healthz", "disabled": true },
+    { "action": "highlight", "pattern": "OOM|oom-killer" }
+  ],
+  "search": { "pattern": "timeout" }
+}
+```
+
+The case mode is recorded because it is part of what the rules mean: a set built
+under `sensitive` would quietly widen if it were reloaded somewhere configured
+for smart case.
 
 ### Preview
 
