@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 
 	"github.com/sidcha/log-viewer/internal/config"
@@ -43,15 +44,20 @@ func (a *App) ApplyStartup(only, never, marks []string) error {
 }
 
 // exec runs one command. Every interactive action arrives here, whether from a
-// key binding or the `:` prompt.
-func (a *App) exec(cmd config.Command) {
-	step := int64(a.cfg.Int("scroll-step"))
-	if step < 1 {
-		step = 1
+// key binding, a repeat count or the command line.
+//
+// count is the digits typed before the key, zero when none were. Commands that
+// take a numeric argument use it as a repeat; a few, notably goto-end, read it
+// as a line number the way vim does.
+func (a *App) exec(cmd config.Command, count int64) {
+	n := count
+	if n < 1 {
+		n = 1
 	}
-	hstep := a.cfg.Int("h-scroll-step")
-	if hstep < 1 {
-		hstep = 8
+	if len(cmd.Args) > 0 {
+		if v, err := strconv.ParseInt(cmd.Args[0], 10, 64); err == nil && v > 0 {
+			n = v
+		}
 	}
 
 	switch cmd.Name {
@@ -69,48 +75,100 @@ func (a *App) exec(cmd config.Command) {
 
 	// ---------------------------------------------------------------- motion
 	case "up":
-		a.follow = false
-		a.moveBy(-a.argN(cmd, step))
+		a.moveCursor(-n)
 	case "down":
-		a.moveBy(a.argN(cmd, step))
+		a.moveCursor(n)
 	case "left":
-		a.hoff -= int(a.argN(cmd, int64(hstep)))
-		if a.hoff < 0 {
-			a.hoff = 0
-		}
+		a.moveColumn(-int(n))
 	case "right":
-		a.hoff += int(a.argN(cmd, int64(hstep)))
-		if a.hoff > maxHOff {
-			a.hoff = maxHOff
+		a.moveColumn(int(n))
+	case "word-forward":
+		for i := int64(0); i < n; i++ {
+			a.wordForward()
 		}
+	case "word-back":
+		for i := int64(0); i < n; i++ {
+			a.wordBack()
+		}
+	case "word-end":
+		for i := int64(0); i < n; i++ {
+			a.wordEnd()
+		}
+	case "line-start":
+		a.setColumn(0)
+		a.hoff = 0
+	case "line-first":
+		a.columnFirstNonBlank()
+	case "line-end":
+		a.columnEnd()
 	case "column-reset":
 		a.hoff = 0
+	case "scroll-down":
+		a.scrollView(n)
+	case "scroll-up":
+		a.scrollView(-n)
 	case "page-up":
-		a.follow = false
-		a.moveBy(-a.pageStep())
+		a.pageCursor(-a.pageStep())
 	case "page-down":
-		a.moveBy(a.pageStep())
+		a.pageCursor(a.pageStep())
 	case "half-page-up":
-		a.follow = false
-		a.moveBy(-int64(a.contentRows() / 2))
+		a.pageCursor(-int64(a.contentRows() / 2))
 	case "half-page-down":
-		a.moveBy(int64(a.contentRows() / 2))
+		a.pageCursor(int64(a.contentRows() / 2))
 	case "goto-start":
 		a.follow = false
-		a.setTop(0)
+		a.setCursor(0)
 	case "goto-end":
-		a.gotoEnd()
+		// vim: G alone goes to the end, {count}G to that line.
+		if count > 0 {
+			a.gotoSourceLine(count)
+			return
+		}
+		a.follow = false
+		a.setCursor(a.viewLen() - 1)
 	case "goto-line":
 		if len(cmd.Args) == 1 {
-			n, err := strconv.ParseInt(cmd.Args[0], 10, 64)
+			v, err := strconv.ParseInt(cmd.Args[0], 10, 64)
 			if err != nil {
 				a.errorf("not a line number: %s", cmd.Args[0])
 				return
 			}
-			a.gotoSourceLine(n)
+			a.gotoSourceLine(v)
+			return
+		}
+		if count > 0 {
+			a.gotoSourceLine(count)
 			return
 		}
 		a.openPrompt(pGotoLine, "goto line: ", nil)
+	case "screen-top":
+		a.cursorToScreen(spotTop, n)
+	case "screen-middle":
+		a.cursorToScreen(spotMiddle, n)
+	case "screen-bottom":
+		a.cursorToScreen(spotBottom, n)
+	case "align-center":
+		a.alignView(spotMiddle)
+	case "align-top":
+		a.alignView(spotTop)
+	case "align-bottom":
+		a.alignView(spotBottom)
+
+	// ---------------------------------------------------------------- select
+	case "visual":
+		a.startVisual(visualChar)
+	case "visual-line":
+		a.startVisual(visualLine)
+	case "yank":
+		a.yank(count)
+	case "yank-line":
+		if !a.visualActive() {
+			a.sel = selection{mode: visualLine, line: a.cursorLine(), col: 0}
+			if n > 1 {
+				a.setCursor(a.cursorLine() + n - 1)
+			}
+		}
+		a.yank(count)
 
 	// ------------------------------------------------------------------ view
 	case "follow-toggle":
@@ -122,17 +180,17 @@ func (a *App) exec(cmd config.Command) {
 			a.infof("follow off")
 		}
 	case "wrap-toggle":
-		a.wrap = !a.wrap
-		a.hoff = 0
-		a.infof("wrap %s", onOff(a.wrap))
+		a.setBool("wrap", !a.wrap)
 	case "line-numbers-toggle":
-		a.lineNums = !a.lineNums
+		a.setBool("line-numbers", !a.lineNums)
 	case "status-toggle":
 		if a.statusOn == "on" {
 			a.statusOn = "off"
 		} else {
 			a.statusOn = "on"
 		}
+	case "set":
+		a.setOption(cmd.Args)
 	case "reload":
 		a.reload()
 
@@ -142,28 +200,32 @@ func (a *App) exec(cmd config.Command) {
 			a.doSearch(cmd.Args[0], false)
 			return
 		}
-		a.openPrompt(pSearchFwd, "/", &a.histPattern)
+		a.openPattern(actSearch, false)
 	case "search-backward":
 		if len(cmd.Args) == 1 {
 			a.doSearch(cmd.Args[0], true)
 			return
 		}
-		a.openPrompt(pSearchBack, "?", &a.histPattern)
+		a.openPattern(actSearch, true)
 	case "search-next":
 		a.searchStep(false)
 	case "search-prev":
 		a.searchStep(true)
+	case "search-word":
+		a.searchWordUnderCursor(false)
+	case "search-word-back":
+		a.searchWordUnderCursor(true)
 	case "search-clear":
 		a.search = searchState{cur: -1}
 		a.infof("search cleared")
 
 	// ----------------------------------------------------------------- rules
 	case "filter-only":
-		a.ruleCommand(cmd, filter.Only, pOnly, "show only: ")
+		a.ruleCommand(cmd, actOnly)
 	case "filter-never":
-		a.ruleCommand(cmd, filter.Never, pNever, "never show: ")
+		a.ruleCommand(cmd, actNever)
 	case "highlight":
-		a.ruleCommand(cmd, filter.Highlight, pHighlight, "highlight: ")
+		a.ruleCommand(cmd, actHighlight)
 
 	case "filter-pop":
 		if a.rules.Len() == 0 {
@@ -180,10 +242,11 @@ func (a *App) exec(cmd config.Command) {
 		a.applyRules(a.rules.Clear(), true)
 		a.infof("rules cleared")
 	case "highlight-clear":
-		if a.rules.Count(filter.Highlight) == 0 {
+		if a.rules.Count(filter.Highlight) == 0 && a.search.m == nil {
 			a.infof("no highlights")
 			return
 		}
+		a.search = searchState{cur: -1}
 		a.applyRules(a.rules.ClearAction(filter.Highlight), true)
 		a.infof("highlights cleared")
 	case "filter-bypass":
@@ -211,25 +274,76 @@ func (a *App) exec(cmd config.Command) {
 	}
 }
 
+// setBool changes a boolean setting and mirrors it into the live view state.
+func (a *App) setBool(name string, value bool) {
+	_ = a.cfg.Set(name, onOff(value))
+	a.syncSettings()
+	a.infof("%s %s", name, onOff(value))
+}
+
+// syncSettings re-reads the settings the viewer caches.
+func (a *App) syncSettings() {
+	a.wrap = a.cfg.Bool("wrap")
+	a.lineNums = a.cfg.Bool("line-numbers")
+	a.follow = a.cfg.Bool("follow") || a.follow
+	if a.wrap {
+		a.hoff = 0
+	}
+}
+
+// setOption implements :set, including vim's bare-name toggle for booleans.
+func (a *App) setOption(args []string) {
+	if len(args) == 0 {
+		a.errorf("usage: set <name> [value]")
+		return
+	}
+	name := args[0]
+	spec, ok := config.LookupSetting(name)
+	if !ok {
+		a.errorf("unknown setting %q", name)
+		return
+	}
+
+	if len(args) == 1 {
+		if !spec.IsBool() {
+			a.infof("%s = %s", name, a.cfg.Str(name))
+			return
+		}
+		a.setBool(name, !a.cfg.Bool(name))
+		return
+	}
+
+	if err := a.cfg.Set(name, args[1]); err != nil {
+		a.errorf("%v", err)
+		return
+	}
+	a.syncSettings()
+	a.statusOn = a.cfg.Str("status-line")
+	a.infof("%s = %s", name, a.cfg.Str(name))
+}
+
+// searchWordUnderCursor is * and #.
+func (a *App) searchWordUnderCursor(back bool) {
+	word := a.wordUnderCursor()
+	if word == "" {
+		a.errorf("no word under the cursor")
+		return
+	}
+	a.doSearch(regexpQuote(word), back)
+}
+
+// regexpQuote escapes a literal so it can be used where a pattern is expected.
+func regexpQuote(s string) string { return regexp.QuoteMeta(s) }
+
 // ruleCommand adds a rule directly when given a pattern, and otherwise opens
 // the prompt so the pattern can be previewed before it is committed.
-func (a *App) ruleCommand(cmd config.Command, action filter.Action, kind promptKind, label string) {
+func (a *App) ruleCommand(cmd config.Command, act promptAction) {
 	if len(cmd.Args) == 1 {
+		action, _ := act.rule()
 		a.addRule(action, cmd.Args[0], filter.Color{})
 		return
 	}
-	a.openPrompt(kind, label, &a.histPattern)
-}
-
-func (a *App) argN(cmd config.Command, def int64) int64 {
-	if len(cmd.Args) == 0 {
-		return def
-	}
-	n, err := strconv.ParseInt(cmd.Args[0], 10, 64)
-	if err != nil || n <= 0 {
-		return def
-	}
-	return n
+	a.openPattern(act, false)
 }
 
 func (a *App) pageStep() int64 {
@@ -250,6 +364,10 @@ func onOff(b bool) string {
 // cancel unwinds whatever is in front of the user, innermost first.
 func (a *App) cancel() {
 	switch {
+	case a.visualActive():
+		a.endVisual()
+	case len(a.pending) > 0 || a.count > 0:
+		a.pending, a.count = a.pending[:0], 0
 	case a.busy != nil:
 		a.cancelBusy()
 		a.infof("cancelled")
@@ -373,7 +491,7 @@ func (a *App) resolveAnchor() {
 	}
 	if !a.filtered() {
 		a.havePending = false
-		a.setTop(a.pendingAnchor)
+		a.setCursor(a.pendingAnchor)
 		return
 	}
 	f := a.filt
@@ -381,9 +499,9 @@ func (a *App) resolveAnchor() {
 		return // not scanned far enough yet; try again next frame
 	}
 	if i, ok := f.IndexForSource(a.pendingAnchor); ok {
-		a.setTop(i)
+		a.setCursor(i)
 	} else {
-		a.setTop(f.Len() - 1)
+		a.setCursor(f.Len() - 1)
 	}
 	a.havePending = false
 }

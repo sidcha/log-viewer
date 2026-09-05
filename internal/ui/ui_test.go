@@ -91,7 +91,7 @@ func numberedLine(i int) string {
 
 func run(a *App, names ...string) {
 	for _, n := range names {
-		a.exec(config.Command{Name: n})
+		a.exec(config.Command{Name: n}, 0)
 	}
 	a.draw()
 }
@@ -112,48 +112,105 @@ func TestRenderShowsFileFromTheTop(t *testing.T) {
 	}
 }
 
-func TestScrolling(t *testing.T) {
+// TestCursorMotion checks vi's model: j and k move a cursor and the window
+// only follows once the cursor would leave it.
+func TestCursorMotion(t *testing.T) {
 	a, scr := newTestApp(t, numbered(100))
 
 	run(a, "down", "down")
-	if got := rowText(scr, 0); got != numberedLine(2) {
-		t.Fatalf("after two downs row 0 = %q", got)
+	if a.cursorLine() != 2 {
+		t.Fatalf("cursor = %d, want 2", a.cursorLine())
+	}
+	if got := rowText(scr, 0); got != numberedLine(0) {
+		t.Fatalf("the window scrolled on j: row 0 = %q", got)
 	}
 
 	run(a, "up")
-	if got := rowText(scr, 0); got != numberedLine(1) {
-		t.Fatalf("after up row 0 = %q", got)
+	if a.cursorLine() != 1 {
+		t.Fatalf("after up cursor = %d, want 1", a.cursorLine())
+	}
+
+	// Moving past the bottom, less the scroll-off margin, does scroll.
+	off := int64(a.scrolloff())
+	for i := int64(0); i < int64(testH); i++ {
+		run(a, "down")
+	}
+	if a.top == 0 {
+		t.Fatal("the window never scrolled as the cursor went past the bottom")
+	}
+	if a.cursorLine() > a.top+int64(testH)-1-off {
+		t.Fatalf("cursor %d is below the scroll-off margin (top %d)", a.cursorLine(), a.top)
 	}
 
 	run(a, "goto-end")
+	if a.cursorLine() != 99 {
+		t.Fatalf("G put the cursor at %d, want 99", a.cursorLine())
+	}
 	if got := rowText(scr, testH-1); got != numberedLine(99) {
 		t.Fatalf("goto-end last row = %q", got)
 	}
 
 	run(a, "goto-start")
+	if a.cursorLine() != 0 || a.top != 0 {
+		t.Fatalf("gg left cursor %d top %d", a.cursorLine(), a.top)
+	}
 	if got := rowText(scr, 0); got != numberedLine(0) {
 		t.Fatalf("goto-start row 0 = %q", got)
 	}
+}
 
-	// page-down moves by a screen less the configured overlap.
-	run(a, "page-down")
-	want := fmt.Sprintf("line %03d", testH-a.cfg.Int("page-overlap"))
-	if got := rowText(scr, 0); !strings.HasPrefix(got, want) {
-		t.Fatalf("page-down row 0 = %q, want prefix %q", got, want)
+func TestScrollViewKeepsCursorOnScreen(t *testing.T) {
+	a, _ := newTestApp(t, numbered(100))
+
+	// C-e scrolls the window; the cursor is dragged only when it must be.
+	run(a, "scroll-down", "scroll-down", "scroll-down", "scroll-down", "scroll-down")
+	if a.top != 5 {
+		t.Fatalf("top = %d, want 5", a.top)
+	}
+	if a.cursorLine() < a.top || a.cursorLine() > a.top+int64(testH)-1 {
+		t.Fatalf("cursor %d left the window (top %d)", a.cursorLine(), a.top)
 	}
 }
 
-func TestHorizontalScroll(t *testing.T) {
-	a, scr := newTestApp(t, "abcdefghij\n")
-
-	// h-scroll-step defaults to 8, so the first eight columns scroll away.
-	run(a, "right")
-	if got := rowText(scr, 0); got != "ij" {
-		t.Fatalf("after right row 0 = %q, want %q", got, "ij")
+func TestPaging(t *testing.T) {
+	a, _ := newTestApp(t, numbered(200))
+	run(a, "page-down")
+	if a.top == 0 {
+		t.Fatal("page-down did not move the window")
 	}
-	run(a, "column-reset")
-	if got := rowText(scr, 0); got != "abcdefghij" {
-		t.Fatalf("after column-reset row 0 = %q", got)
+	if a.cursorLine() < a.top {
+		t.Fatal("page-down left the cursor above the window")
+	}
+	before := a.top
+	run(a, "page-up")
+	if a.top >= before {
+		t.Fatal("page-up did not move back")
+	}
+}
+
+// TestHorizontalScrollFollowsCursor checks that the window tracks the cursor
+// column, which is what makes $ and w usable on a line wider than the terminal.
+func TestHorizontalScrollFollowsCursor(t *testing.T) {
+	long := strings.Repeat("ab", 120) + "END\n"
+	a, scr := newTestApp(t, long)
+
+	if a.hoff != 0 {
+		t.Fatalf("hoff = %d at rest", a.hoff)
+	}
+	run(a, "line-end")
+	if a.hoff == 0 {
+		t.Fatal("$ on a long line did not scroll sideways")
+	}
+	if got := rowText(scr, 0); !strings.HasSuffix(got, "END") {
+		t.Fatalf("row 0 = %q, want the end of the line visible", got)
+	}
+
+	run(a, "line-start")
+	if a.hoff != 0 {
+		t.Fatalf("0 left hoff at %d", a.hoff)
+	}
+	if got := rowText(scr, 0); !strings.HasPrefix(got, "abab") {
+		t.Fatalf("row 0 = %q, want the start of the line", got)
 	}
 }
 
@@ -182,7 +239,7 @@ func waitFiltered(t *testing.T, a *App) {
 func TestFilterOutRemovesLines(t *testing.T) {
 	a, scr := newTestApp(t, numbered(100))
 
-	a.exec(config.Command{Name: "filter-never", Args: []string{"INFO"}})
+	a.exec(config.Command{Name: "filter-never", Args: []string{"INFO"}}, 0)
 	waitFiltered(t, a)
 
 	for row := 0; row < testH; row++ {
@@ -206,7 +263,7 @@ func TestFilterKeepThenPopRestoresEverything(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	full := a.viewLen()
 
-	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}})
+	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}}, 0)
 	waitFiltered(t, a)
 	kept := a.viewLen()
 	if kept == 0 || kept >= full {
@@ -226,7 +283,7 @@ func TestFilterBypassKeepsTheStack(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	full := a.viewLen()
 
-	a.exec(config.Command{Name: "filter-never", Args: []string{"INFO"}})
+	a.exec(config.Command{Name: "filter-never", Args: []string{"INFO"}}, 0)
 	waitFiltered(t, a)
 	filtered := a.viewLen()
 
@@ -249,29 +306,35 @@ func TestFilterBypassKeepsTheStack(t *testing.T) {
 func TestFilterHoldsPosition(t *testing.T) {
 	a, _ := newTestApp(t, numbered(600))
 
-	a.exec(config.Command{Name: "goto-line", Args: []string{"300"}})
+	a.exec(config.Command{Name: "goto-line", Args: []string{"300"}}, 0)
 	a.draw()
-	if a.top != 299 {
-		t.Fatalf("goto-line put top at %d, want 299", a.top)
+	if a.cursorLine() != 299 {
+		t.Fatalf("goto-line put the cursor at %d, want 299", a.cursorLine())
 	}
 
-	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}})
+	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}}, 0)
 	waitFiltered(t, a)
 
-	ln, err := a.activeView().At(a.top, nil)
+	ln, err := a.activeView().At(a.cursorLine(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The anchor must land on the first kept line at or after source line 300.
 	if ln.Num < 300 || ln.Num > 303 {
-		t.Fatalf("after filtering, top line is %d; expected the first kept line at or after 300", ln.Num)
+		t.Fatalf("after filtering, the cursor is on line %d; expected the first kept line at or after 300", ln.Num)
 	}
 }
 
 func TestHighlightStylesMatchingText(t *testing.T) {
 	a, scr := newTestApp(t, "plain text here\n")
 
+	// Turn off the cursor-line tint so this compares the highlight alone.
+	if err := a.cfg.Set("cursor-line", "off"); err != nil {
+		t.Fatal(err)
+	}
+	a.draw()
 	_, _, before, _ := scr.GetContent(0, 0)
+
 	a.addRule(filter.Highlight, "text", filter.Color{})
 	a.draw()
 
@@ -291,6 +354,9 @@ func TestSyntaxProfileStylesLevels(t *testing.T) {
 	if a.eng.Profile == nil {
 		t.Fatal("no syntax profile was selected")
 	}
+	if err := a.cfg.Set("cursor-line", "off"); err != nil {
+		t.Fatal(err)
+	}
 	a.draw()
 
 	_, _, errStyle, _ := scr.GetContent(20, 0) // inside "ERROR"
@@ -308,8 +374,8 @@ func TestKeyDispatch(t *testing.T) {
 
 	a.key(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone))
 	a.draw()
-	if got := rowText(scr, 0); got != numberedLine(1) {
-		t.Fatalf("j did not scroll down: row 0 = %q", got)
+	if a.cursorLine() != 1 {
+		t.Fatalf("j did not move the cursor: %d", a.cursorLine())
 	}
 
 	a.key(tcell.NewEventKey(tcell.KeyRune, 'G', tcell.ModNone))

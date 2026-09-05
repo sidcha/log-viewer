@@ -240,3 +240,20 @@ func (s *Set) Fingerprint() string {
 	}
 	return b.String()
 }
+
+// Replace returns a set with rule i swapped for r, keeping its position.
+//
+// Editing a rule in place matters for a list the user is looking at: changing a
+// pattern must not make the row jump somewhere else.
+func (s *Set) Replace(i int, r Rule) *Set {
+	if i < 0 || i >= len(s.rules) {
+		return s
+	}
+	n := s.clone()
+	if r.Color == (Color{}) {
+		r.Color = n.rules[i].Color
+	}
+	n.rules[i] = r
+	n.recount()
+	return n
+}

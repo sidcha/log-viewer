@@ -30,6 +30,19 @@ func rowStyles(scr tcell.SimulationScreen, row int) []tcell.Style {
 	return out
 }
 
+// fg compares by foreground only. The cursor line tints the background, so a
+// whole-style comparison would depend on where the cursor happens to be.
+func fg(st tcell.Style) tcell.Color {
+	c, _, _ := st.Decompose()
+	return c
+}
+
+// isDropped reports whether a row is drawn as a line the candidate rule would
+// remove.
+func isDropped(a *App, scr tcell.SimulationScreen, row int) bool {
+	return fg(rowStyles(scr, row)[0]) == fg(a.cfg.Style("preview.dropped"))
+}
+
 func TestPreviewDimsLinesAnOnlyRuleWouldRemove(t *testing.T) {
 	a, scr := newTestApp(t, numbered(40))
 
@@ -37,13 +50,11 @@ func TestPreviewDimsLinesAnOnlyRuleWouldRemove(t *testing.T) {
 	typeInto(a, "ERROR")
 	a.draw()
 
-	dropped := a.cfg.Style("preview.dropped")
-
 	// Row 0 is an ERROR line and survives; row 1 is INFO and would go.
-	if got := rowStyles(scr, 0)[0]; got == dropped {
+	if isDropped(a, scr, 0) {
 		t.Error("a line the rule would keep is drawn as dropped")
 	}
-	if got := rowStyles(scr, 1)[0]; got != dropped {
+	if !isDropped(a, scr, 1) {
 		t.Error("a line the rule would remove is not dimmed")
 	}
 
@@ -60,11 +71,10 @@ func TestPreviewDimsLinesANeverRuleWouldRemove(t *testing.T) {
 	typeInto(a, "ERROR")
 	a.draw()
 
-	dropped := a.cfg.Style("preview.dropped")
-	if got := rowStyles(scr, 0)[0]; got != dropped {
+	if !isDropped(a, scr, 0) {
 		t.Error("a matching line is not dimmed under a never rule")
 	}
-	if got := rowStyles(scr, 1)[0]; got == dropped {
+	if isDropped(a, scr, 1) {
 		t.Error("a non-matching line should be unaffected by a never rule")
 	}
 }
@@ -72,19 +82,19 @@ func TestPreviewDimsLinesANeverRuleWouldRemove(t *testing.T) {
 func TestPreviewMarksMatchesWithoutDimmingAnything(t *testing.T) {
 	a, scr := newTestApp(t, numbered(40))
 
-	a.key(tcell.NewEventKey(tcell.KeyRune, '*', tcell.ModNone)) // highlight
+	a.key(tcell.NewEventKey(tcell.KeyRune, 'm', tcell.ModNone)) // highlight
 	typeInto(a, "ERROR")
 	a.draw()
 
-	dropped := a.cfg.Style("preview.dropped")
 	for row := 0; row < testH; row++ {
-		if rowStyles(scr, row)[0] == dropped {
+		if isDropped(a, scr, row) {
 			t.Fatalf("row %d dimmed; a highlight removes nothing", row)
 		}
 	}
 
-	// "ERROR" starts at column 9 of "line 000 ERROR bad".
-	styles := rowStyles(scr, 0)
+	// "ERROR" starts at column 9 of "line 000 ERROR bad". Compare on a row
+	// away from the cursor so the cursor-line tint does not interfere.
+	styles := rowStyles(scr, 3)
 	if styles[9] != a.prev.style {
 		t.Error("the matched text is not painted in the previewed colour")
 	}
@@ -193,7 +203,7 @@ func TestPreviewEndsWithThePrompt(t *testing.T) {
 func TestCommittedRuleKeepsThePreviewedColour(t *testing.T) {
 	a, _ := newTestApp(t, numbered(20))
 
-	a.key(tcell.NewEventKey(tcell.KeyRune, '*', tcell.ModNone))
+	a.key(tcell.NewEventKey(tcell.KeyRune, 'm', tcell.ModNone))
 	typeInto(a, "ERROR")
 	want := a.prev.color
 
@@ -206,18 +216,86 @@ func TestCommittedRuleKeepsThePreviewedColour(t *testing.T) {
 	}
 }
 
-func TestSearchPromptHasNoPreview(t *testing.T) {
-	a, _ := newTestApp(t, numbered(20))
+// TestSearchPreviewsAndDefaultsToHighlight is the / behaviour: matches are
+// marked as you type, nothing is removed, and Enter searches rather than
+// filtering.
+func TestSearchPreviewsAndDefaultsToHighlight(t *testing.T) {
+	a, scr := newTestApp(t, numbered(40))
+
 	a.key(tcell.NewEventKey(tcell.KeyRune, '/', tcell.ModNone))
-	if a.prev != nil {
-		t.Error("searching does not remove lines, so it should not preview one")
+	if a.prev == nil {
+		t.Fatal("/ did not start a preview")
+	}
+	if a.prompt.act != actSearch {
+		t.Fatalf("/ opened on %v, want search", a.prompt.act)
+	}
+
+	typeInto(a, "ERROR")
+	a.draw()
+
+	for row := 0; row < testH; row++ {
+		if isDropped(a, scr, row) {
+			t.Fatalf("row %d dimmed; searching removes nothing", row)
+		}
+	}
+	// Matches are marked in the previewed colour.
+	if rowStyles(scr, 3)[9] != a.prev.style {
+		t.Error("search preview did not mark the match")
+	}
+	if a.prev.matched == 0 {
+		t.Error("search preview counted no matches")
+	}
+}
+
+// TestSearchPromptCyclesAction covers Tab promoting a search into a rule
+// without retyping the pattern.
+func TestSearchPromptCyclesAction(t *testing.T) {
+	a, _ := newTestApp(t, numbered(40))
+
+	a.key(tcell.NewEventKey(tcell.KeyRune, '/', tcell.ModNone))
+	typeInto(a, "ERROR")
+
+	press(a, tcell.KeyTab)
+	if a.prompt.act != actOnly {
+		t.Fatalf("Tab from search went to %v, want only", a.prompt.act)
+	}
+	if a.prev.act != actOnly {
+		t.Error("the preview did not follow the action change")
+	}
+	if string(a.prompt.buf) != "ERROR" {
+		t.Errorf("Tab lost the typed pattern: %q", a.prompt.buf)
+	}
+
+	press(a, tcell.KeyTab)
+	if a.prompt.act != actNever {
+		t.Fatalf("second Tab went to %v, want never", a.prompt.act)
+	}
+	press(a, tcell.KeyTab)
+	if a.prompt.act != actHighlight {
+		t.Fatalf("third Tab went to %v, want highlight", a.prompt.act)
+	}
+	press(a, tcell.KeyTab)
+	if a.prompt.act != actSearch {
+		t.Fatalf("Tab did not wrap back to search, got %v", a.prompt.act)
+	}
+
+	// Back-tab goes the other way.
+	press(a, tcell.KeyBacktab)
+	if a.prompt.act != actHighlight {
+		t.Fatalf("Backtab went to %v, want highlight", a.prompt.act)
+	}
+
+	// Committing on a rule action adds the rule rather than searching.
+	press(a, tcell.KeyEnter)
+	if a.rules.Len() != 1 || a.rules.All()[0].Action != filter.Highlight {
+		t.Fatalf("rules = %d after Tab+Enter", a.rules.Len())
 	}
 }
 
 func TestPreviewRunsOnTopOfExistingFilters(t *testing.T) {
 	a, _ := newTestApp(t, numbered(90))
 
-	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}})
+	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}}, 0)
 	waitFiltered(t, a)
 	if a.viewLen() != 30 {
 		t.Fatalf("filtered view has %d lines, want 30", a.viewLen())
@@ -235,7 +313,7 @@ func TestPreviewRunsOnTopOfExistingFilters(t *testing.T) {
 func TestHighlightDoesNotRestartAFilterScan(t *testing.T) {
 	a, _ := newTestApp(t, numbered(200))
 
-	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}})
+	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}}, 0)
 	waitFiltered(t, a)
 	before := a.filt
 
@@ -288,7 +366,7 @@ func TestRulesGetDistinctColours(t *testing.T) {
 func TestHighlightClearLeavesFiltersAlone(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 
-	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}})
+	a.exec(config.Command{Name: "filter-only", Args: []string{"ERROR"}}, 0)
 	waitFiltered(t, a)
 	a.addRule(filter.Highlight, "bad", filter.Color{})
 

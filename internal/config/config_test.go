@@ -309,9 +309,18 @@ func TestParseLine(t *testing.T) {
 	}
 }
 
+// commandLineOnly lists commands deliberately reachable only from the `:`
+// prompt, because they take an argument or duplicate something a key already
+// does. Anything else without a binding is an oversight.
+var commandLineOnly = map[string]bool{
+	"nop":          true,
+	"set":          true, // :set wrap, like vim
+	"goto-line":    true, // :42, or 42G
+	"column-reset": true, // 0 already resets the horizontal offset
+	"search-clear": true, // :noh
+}
+
 func TestEverySpecIsReachable(t *testing.T) {
-	// A command nobody can trigger is a bug: either bind it or document it as
-	// prompt-only. This checks the vocabulary and the bindings agree.
 	c, err := Load(LoadOptions{NoUser: true})
 	if err != nil {
 		t.Fatal(err)
@@ -320,8 +329,14 @@ func TestEverySpecIsReachable(t *testing.T) {
 	for _, b := range c.Binds() {
 		bound[b.Cmd.Name] = true
 	}
+	for _, b := range c.VisualBinds() {
+		bound[b.Cmd.Name] = true
+	}
 	for _, s := range Specs {
-		if s.Name == "nop" {
+		if commandLineOnly[s.Name] {
+			if bound[s.Name] {
+				t.Errorf("command %q is listed as command-line only but is bound", s.Name)
+			}
 			continue
 		}
 		if !bound[s.Name] {

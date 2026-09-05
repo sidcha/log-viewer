@@ -15,36 +15,23 @@ import (
 // rule is applied: lines that would go are dimmed, matches are painted in the
 // colour the rule is about to take.
 type preview struct {
-	action filter.Action
-	m      filter.Matcher
-	color  filter.Color
-	style  tcell.Style
-	err    error
+	act   promptAction
+	m     filter.Matcher
+	color filter.Color
+	style tcell.Style
+	err   error
 
 	// counted over a bounded sample below the top of the screen
 	matched int
 	sampled int
 }
 
-// previewKind reports the rule action a prompt is collecting a pattern for.
-func previewKind(k promptKind) (filter.Action, bool) {
-	switch k {
-	case pOnly:
-		return filter.Only, true
-	case pNever:
-		return filter.Never, true
-	case pHighlight:
-		return filter.Highlight, true
-	}
-	return filter.Only, false
-}
-
 // startPreview picks the colour the rule would take, so the preview shows the
 // real thing rather than a placeholder.
-func (a *App) startPreview(action filter.Action) {
+func (a *App) startPreview(act promptAction) {
 	a.prev = &preview{
-		action: action,
-		color:  filter.NextColor(a.rules.Colors()),
+		act:   act,
+		color: filter.NextColor(a.rules.Colors()),
 	}
 	a.prev.style = a.styleFor(a.prev.color)
 	a.updatePreview("")
@@ -94,10 +81,10 @@ func (p *preview) verdict(line []byte) (dropped, hit bool) {
 		return false, false
 	}
 	hit = p.m.Match(line)
-	switch p.action {
-	case filter.Only:
+	switch p.act {
+	case actOnly:
 		dropped = !hit
-	case filter.Never:
+	case actNever:
 		dropped = hit
 	}
 	return dropped, hit
@@ -115,13 +102,13 @@ func (p *preview) summary() string {
 	}
 
 	var verb string
-	switch p.action {
-	case filter.Only:
+	switch p.act {
+	case actOnly:
 		verb = "shown"
-	case filter.Never:
+	case actNever:
 		verb = "hidden"
 	default:
-		verb = "marked"
+		verb = "matched"
 	}
 	return "  " + commas(int64(p.matched)) + " of " + commas(int64(p.sampled)) + " " + verb
 }

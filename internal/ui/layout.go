@@ -154,3 +154,43 @@ func skipCSI(text []byte, i int) (int, bool) {
 	}
 	return i, false
 }
+
+// displayColumn is the terminal column a byte offset falls on, applying the
+// same tab and width rules as build without laying the line out.
+func displayColumn(text []byte, byteOff, tab int) int {
+	if tab <= 0 {
+		tab = 8
+	}
+	col := 0
+	for i := 0; i < len(text) && i < byteOff; {
+		c := text[i]
+		switch {
+		case c == '\t':
+			col += tab - (col % tab)
+			i++
+		case c == 0x1b && i+1 < len(text) && text[i+1] == '[':
+			if j, ok := skipCSI(text, i); ok {
+				i = j
+				continue
+			}
+			col++
+			i++
+		case c < 0x20 || c == 0x7f || c < 0x80:
+			col++
+			i++
+		default:
+			r, size := utf8.DecodeRune(text[i:])
+			if r == utf8.RuneError && size <= 1 {
+				col++
+				i++
+				continue
+			}
+			w := runewidth.RuneWidth(r)
+			if w > 0 {
+				col += w
+			}
+			i += size
+		}
+	}
+	return col
+}

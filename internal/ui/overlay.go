@@ -205,6 +205,14 @@ func (a *App) overlayKey(ev *tcell.EventKey) bool {
 	case tcell.KeyEscape:
 		a.ov = nil
 		return true
+	case tcell.KeyEnter:
+		if o.kind == ovRules {
+			if i := o.selected(); i >= 0 {
+				a.applyRules(a.rules.Toggle(i), true)
+				a.showRules()
+			}
+			return true
+		}
 	case tcell.KeyUp:
 		o.moveSel(-1)
 		return true
@@ -236,12 +244,46 @@ func (a *App) overlayKey(ev *tcell.EventKey) bool {
 				}
 				return true
 			}
-		case 'd':
+		case 'd', 'x':
 			if o.kind == ovRules {
 				if i := o.selected(); i >= 0 {
 					a.applyRules(a.rules.Remove(i), true)
 					a.showRules()
 				}
+				return true
+			}
+		case 'e', 'i', 'c':
+			if o.kind == ovRules {
+				if i := o.selected(); i >= 0 {
+					a.ov = nil
+					a.openRuleEdit(i)
+				}
+				return true
+			}
+		case 'a':
+			if o.kind == ovRules {
+				if i := o.selected(); i >= 0 {
+					a.cycleRuleAction(i)
+				}
+				return true
+			}
+		case 'r':
+			if o.kind == ovRules {
+				if i := o.selected(); i >= 0 {
+					a.recolourRule(i)
+				}
+				return true
+			}
+		case 'A':
+			if o.kind == ovRules {
+				a.applyRules(a.rules.SetAll(true), true)
+				a.showRules()
+				return true
+			}
+		case 'D':
+			if o.kind == ovRules {
+				a.applyRules(a.rules.SetAll(false), true)
+				a.showRules()
 				return true
 			}
 		}
@@ -322,7 +364,7 @@ func (a *App) showRules() {
 	o := &overlay{
 		kind:  ovRules,
 		title: "rules",
-		hint:  "Space toggle  d delete  Esc close",
+		hint:  "Space on/off  e edit  a action  r recolour  d delete  Esc close",
 	}
 	if a.ov != nil && a.ov.kind == ovRules {
 		o.sel = a.ov.sel
@@ -331,7 +373,7 @@ func (a *App) showRules() {
 	rules := a.rules.All()
 	if len(rules) == 0 {
 		o.rows = append(o.rows, ovRow{
-			text:  "  no rules yet -- & show only, ! never show, * highlight",
+			text:  "  no rules yet -- & only, ! never, / search, Tab to switch",
 			style: "overlay.dim",
 			item:  -1,
 		})

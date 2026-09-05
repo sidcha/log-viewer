@@ -68,6 +68,9 @@ var Settings = []Setting{
 	{"mouse", kBool, "on", nil, "enable mouse wheel scrolling"},
 	{"gutter", kStr, "│ ", nil, "separator drawn after the line-number gutter"},
 	{"message-timeout", kDur, "4s", nil, "how long a status message stays up"},
+	{"scroll-off", kInt, "3", nil, "lines of context kept above and below the cursor"},
+	{"cursor-line", kBool, "on", nil, "mark the line the cursor is on"},
+	{"clipboard-command", kStr, "", nil, "external clipboard program; empty uses the terminal escape"},
 }
 
 var settingIndex = func() map[string]*Setting {
@@ -78,11 +81,12 @@ var settingIndex = func() map[string]*Setting {
 	return m
 }()
 
-// Bind associates a key with a command.
+// Bind associates a key sequence with a command.
 type Bind struct {
-	Key  Key
-	Spec string
-	Cmd  Command
+	Keys   []Key
+	Spec   string
+	Cmd    Command
+	Visual bool
 }
 
 // Preset is a rule declared in configuration rather than added at runtime.
@@ -93,6 +97,10 @@ type Preset struct {
 	Color filter.Color
 }
 
+// IsBool reports whether the setting takes on/off, which is what lets :set
+// toggle it with no value given.
+func (s *Setting) IsBool() bool { return s.Kind == kBool }
+
 // LookupSetting finds a setting by name.
 func LookupSetting(name string) (*Setting, bool) {
 	s, ok := settingIndex[name]
@@ -102,8 +110,10 @@ func LookupSetting(name string) (*Setting, bool) {
 // Config is the fully resolved configuration.
 type Config struct {
 	values   map[string]string
-	binds    map[Key]Command
+	root     *keyNode
+	vroot    *keyNode
 	order    []Bind
+	vorder   []Bind
 	styles   map[string]tcell.Style
 	profiles []*highlight.Profile
 	presets  []Preset
@@ -119,7 +129,8 @@ type Config struct {
 func New() *Config {
 	c := &Config{
 		values:  make(map[string]string, len(Settings)),
-		binds:   make(map[Key]Command),
+		root:    &keyNode{},
+		vroot:   &keyNode{},
 		styles:  make(map[string]tcell.Style),
 		sourced: make(map[string]bool),
 		origins: make(map[string]string),
@@ -199,14 +210,18 @@ func (c *Config) Case() filter.Case {
 	return cs
 }
 
-// Command returns the command bound to a key.
+// Command returns the command bound to a single key, for callers that do not
+// need sequence handling.
 func (c *Config) Command(k Key) (Command, bool) {
-	cmd, ok := c.binds[k]
-	return cmd, ok
+	cmd, m := c.Lookup([]Key{k})
+	return cmd, m == Full
 }
 
-// Binds lists bindings in declaration order, for the help overlay.
+// Binds lists normal-mode bindings in declaration order, for the help overlay.
 func (c *Config) Binds() []Bind { return c.order }
+
+// VisualBinds lists visual-mode bindings.
+func (c *Config) VisualBinds() []Bind { return c.vorder }
 
 // Style looks up a named style, falling back to the default style.
 func (c *Config) Style(name string) tcell.Style {
@@ -320,7 +335,7 @@ func (c *Config) directive(st stmt) error {
 		if len(w) < 3 {
 			return st.errf("usage: bind <key> <command> [args...]")
 		}
-		key, err := ParseKey(w[1])
+		seq, err := ParseSequence(w[1])
 		if err != nil {
 			return st.errf("%v", err)
 		}
@@ -328,17 +343,41 @@ func (c *Config) directive(st stmt) error {
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		c.bind(key, w[1], cmd)
+		c.bindSeq(seq, w[1], cmd)
+
+	case "bind-visual":
+		if len(w) < 3 {
+			return st.errf("usage: bind-visual <key> <command> [args...]")
+		}
+		seq, err := ParseSequence(w[1])
+		if err != nil {
+			return st.errf("%v", err)
+		}
+		cmd, err := ParseCommand(w[2:])
+		if err != nil {
+			return st.errf("%v", err)
+		}
+		c.bindVisual(seq, w[1], cmd)
+
+	case "unbind-visual":
+		if len(w) != 2 {
+			return st.errf("usage: unbind-visual <key>")
+		}
+		seq, err := ParseSequence(w[1])
+		if err != nil {
+			return st.errf("%v", err)
+		}
+		c.unbindVisual(seq)
 
 	case "unbind":
 		if len(w) != 2 {
 			return st.errf("usage: unbind <key>")
 		}
-		key, err := ParseKey(w[1])
+		seq, err := ParseSequence(w[1])
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		c.unbind(key)
+		c.unbindSeq(seq)
 
 	case "style":
 		if len(w) < 3 {
@@ -391,30 +430,6 @@ func (c *Config) directive(st stmt) error {
 		return st.errf("unknown directive %q", w[0])
 	}
 	return nil
-}
-
-func (c *Config) bind(k Key, spec string, cmd Command) {
-	if _, exists := c.binds[k]; exists {
-		for i := range c.order {
-			if c.order[i].Key == k {
-				c.order[i] = Bind{Key: k, Spec: spec, Cmd: cmd}
-				break
-			}
-		}
-	} else {
-		c.order = append(c.order, Bind{Key: k, Spec: spec, Cmd: cmd})
-	}
-	c.binds[k] = cmd
-}
-
-func (c *Config) unbind(k Key) {
-	delete(c.binds, k)
-	for i := range c.order {
-		if c.order[i].Key == k {
-			c.order = append(c.order[:i], c.order[i+1:]...)
-			return
-		}
-	}
 }
 
 func (c *Config) block(head stmt, body []stmt) error {
@@ -601,6 +616,9 @@ func (c *Config) Dump() string {
 	b.WriteString("\n# key bindings\n")
 	for _, bd := range c.order {
 		fmt.Fprintf(&b, "bind %-10s %s\n", quoteWord(bd.Spec), bd.Cmd)
+	}
+	for _, bd := range c.vorder {
+		fmt.Fprintf(&b, "bind-visual %-10s %s\n", quoteWord(bd.Spec), bd.Cmd)
 	}
 
 	for _, p := range c.profiles {

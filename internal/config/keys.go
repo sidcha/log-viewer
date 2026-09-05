@@ -40,7 +40,9 @@ var namedKeys = map[string]tcell.Key{
 	"escape":    tcell.KeyEscape,
 	"esc":       tcell.KeyEscape,
 	"bspace":    tcell.KeyBackspace2,
+	"bs":        tcell.KeyBackspace2,
 	"backspace": tcell.KeyBackspace2,
+	"del":       tcell.KeyDelete,
 	"up":        tcell.KeyUp,
 	"down":      tcell.KeyDown,
 	"left":      tcell.KeyLeft,
@@ -176,6 +178,110 @@ func (k Key) String() string {
 			fmt.Fprintf(&b, "C-%c", rune('a'+int(k.Key-tcell.KeyCtrlA)))
 		} else {
 			fmt.Fprintf(&b, "Key(%d)", int(k.Key))
+		}
+	}
+	return b.String()
+}
+
+// ParseSequence turns a binding specification into the keys that must be
+// pressed in order.
+//
+// Three notations are accepted, because vim users and tmux users write key
+// bindings differently and both should work:
+//
+//	C-a        one key, tmux style
+//	PgUp       one named key
+//	gg         a bare sequence: two presses of g
+//	<C-w>s     vim style, where anything in angle brackets is one key
+//
+// A bare multi-character spec is only read as a sequence when it is not
+// already the name of a single key, so `PgUp` stays one key rather than
+// becoming five.
+func ParseSequence(spec string) ([]Key, error) {
+	if spec == "" {
+		return nil, fmt.Errorf("empty key")
+	}
+	if strings.Contains(spec, "<") {
+		return parseAngle(spec)
+	}
+	if k, err := ParseKey(spec); err == nil {
+		return []Key{k}, nil
+	}
+
+	// A bare run of characters is a sequence of presses, but only a short one.
+	// Real sequences are two or three keys; anything longer is far more likely
+	// to be a misspelled key name, and silently binding `PgDown` to six
+	// separate presses would be a miserable thing to debug.
+	if utf8.RuneCountInString(spec) > maxBareSequence {
+		return nil, fmt.Errorf("unknown key %q (write a multi-key sequence in angle brackets, as in <C-w>s)", spec)
+	}
+
+	var out []Key
+	for _, r := range spec {
+		k, err := ParseKey(string(r))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// maxBareSequence bounds how many keys an unbracketed specification may name.
+const maxBareSequence = 3
+
+func parseAngle(spec string) ([]Key, error) {
+	var out []Key
+	for i := 0; i < len(spec); {
+		if spec[i] != '<' {
+			r, size := utf8.DecodeRuneInString(spec[i:])
+			if r == utf8.RuneError && size <= 1 {
+				return nil, fmt.Errorf("bad key %q", spec)
+			}
+			k, err := ParseKey(string(r))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, k)
+			i += size
+			continue
+		}
+
+		end := strings.IndexByte(spec[i:], '>')
+		if end < 0 {
+			return nil, fmt.Errorf("unclosed < in %q", spec)
+		}
+		inner := spec[i+1 : i+end]
+		if inner == "" {
+			return nil, fmt.Errorf("empty <> in %q", spec)
+		}
+		k, err := ParseKey(inner)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+		i += end + 1
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty key")
+	}
+	return out, nil
+}
+
+// SequenceString renders a key sequence the way it would be written in a
+// configuration file.
+func SequenceString(seq []Key) string {
+	var b strings.Builder
+	for _, k := range seq {
+		s := k.String()
+		// Anything that is not a single bare character needs brackets, or the
+		// result would not read back as the same sequence.
+		if utf8.RuneCountInString(s) == 1 {
+			b.WriteString(s)
+		} else {
+			b.WriteByte('<')
+			b.WriteString(s)
+			b.WriteByte('>')
 		}
 	}
 	return b.String()

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,19 +13,96 @@ import (
 type promptKind int
 
 const (
-	pSearchFwd promptKind = iota
-	pSearchBack
-	pOnly
-	pNever
-	pHighlight
+	pPattern promptKind = iota
 	pSave
 	pGotoLine
 	pCommand
+	pRuleEdit
 )
+
+// promptAction is what pressing Enter on a pattern prompt will do.
+//
+// Search, only, never and highlight are the same question asked four ways, so
+// one prompt collects the pattern and Tab cycles what becomes of it. That is
+// also why / previews: the search prompt is the pattern prompt, started on the
+// action that only marks matches.
+type promptAction int
+
+const (
+	actSearch promptAction = iota
+	actOnly
+	actNever
+	actHighlight
+)
+
+var actionOrder = []promptAction{actSearch, actOnly, actNever, actHighlight}
+
+func (p promptAction) String() string {
+	switch p {
+	case actOnly:
+		return "only"
+	case actNever:
+		return "never"
+	case actHighlight:
+		return "highlight"
+	default:
+		return "search"
+	}
+}
+
+// label is the prefix shown at the start of the prompt line.
+func (p promptAction) label(back bool) string {
+	switch p {
+	case actOnly:
+		return "only: "
+	case actNever:
+		return "never: "
+	case actHighlight:
+		return "highlight: "
+	default:
+		if back {
+			return "?"
+		}
+		return "/"
+	}
+}
+
+// rule returns the rule action, for the three that make one.
+func (p promptAction) rule() (filter.Action, bool) {
+	switch p {
+	case actOnly:
+		return filter.Only, true
+	case actNever:
+		return filter.Never, true
+	case actHighlight:
+		return filter.Highlight, true
+	}
+	return filter.Only, false
+}
+
+func nextAction(a promptAction) promptAction {
+	for i, v := range actionOrder {
+		if v == a {
+			return actionOrder[(i+1)%len(actionOrder)]
+		}
+	}
+	return actSearch
+}
+
+func prevAction(a promptAction) promptAction {
+	for i, v := range actionOrder {
+		if v == a {
+			return actionOrder[(i-1+len(actionOrder))%len(actionOrder)]
+		}
+	}
+	return actSearch
+}
 
 // prompt is the single-line editor that replaces the status row.
 type prompt struct {
 	kind  promptKind
+	act   promptAction
+	back  bool // searching backwards
 	label string
 	buf   []rune
 	cur   int
@@ -32,17 +110,74 @@ type prompt struct {
 	hist  *[]string
 	hidx  int    // index into history; len(hist) means "the live buffer"
 	stash []rune // the live buffer while browsing history
+
+	// ruleIndex is the rule being edited, for pRuleEdit.
+	ruleIndex int
+
+	// completion state for the command line
+	comps   []string
+	compIdx int
+	compAt  int
 }
 
 func (a *App) openPrompt(kind promptKind, label string, hist *[]string) {
 	a.clearMsg()
-	a.prompt = &prompt{kind: kind, label: label, hist: hist}
+	a.prompt = &prompt{kind: kind, label: label, hist: hist, ruleIndex: -1}
 	if hist != nil {
 		a.prompt.hidx = len(*hist)
 	}
-	if action, ok := previewKind(kind); ok {
-		a.startPreview(action)
+}
+
+// openPattern opens the shared pattern prompt on a given action.
+func (a *App) openPattern(act promptAction, back bool) {
+	a.clearMsg()
+	a.prompt = &prompt{
+		kind:      pPattern,
+		act:       act,
+		back:      back,
+		label:     act.label(back),
+		hist:      &a.histPattern,
+		hidx:      len(a.histPattern),
+		ruleIndex: -1,
 	}
+	a.startPreview(act)
+}
+
+// openRuleEdit reopens an existing rule's pattern for editing, previewing the
+// change against the current screen before it replaces the rule.
+func (a *App) openRuleEdit(i int) {
+	rules := a.rules.All()
+	if i < 0 || i >= len(rules) {
+		return
+	}
+	r := rules[i]
+
+	act := actHighlight
+	switch r.Action {
+	case filter.Only:
+		act = actOnly
+	case filter.Never:
+		act = actNever
+	}
+
+	a.clearMsg()
+	p := &prompt{
+		kind:      pRuleEdit,
+		act:       act,
+		label:     "edit " + r.Action.String() + ": ",
+		buf:       []rune(r.M.Pattern()),
+		hist:      &a.histPattern,
+		hidx:      len(a.histPattern),
+		ruleIndex: i,
+	}
+	p.cur = len(p.buf)
+	a.prompt = p
+
+	a.startPreview(act)
+	// Keep the rule's own colour so the preview looks like what is on screen.
+	a.prev.color = r.Color
+	a.prev.style = a.styleFor(r.Color)
+	a.updatePreview(string(p.buf))
 }
 
 func (a *App) closePrompt() {
@@ -53,40 +188,58 @@ func (a *App) closePrompt() {
 
 func (a *App) promptKey(ev *tcell.EventKey) {
 	p := a.prompt
+	edited := true
 
 	switch ev.Key() {
 	case tcell.KeyEnter:
 		text := string(p.buf)
-		kind := p.kind
-		// Carry the previewed colour through, so the rule ends up the colour
-		// the user was just looking at.
+		if p.hist != nil && strings.TrimSpace(text) != "" {
+			*p.hist = appendHistory(*p.hist, text)
+		}
+		kind, act, back, idx := p.kind, p.act, p.back, p.ruleIndex
 		var color filter.Color
 		if a.prev != nil {
 			color = a.prev.color
 		}
-		if p.hist != nil && strings.TrimSpace(text) != "" {
-			*p.hist = appendHistory(*p.hist, text)
-		}
 		a.closePrompt()
-		a.acceptPrompt(kind, text, color)
+		a.acceptPrompt(kind, act, back, idx, text, color)
 		return
 
 	case tcell.KeyEscape, tcell.KeyCtrlG:
 		a.closePrompt()
 		return
 
+	case tcell.KeyTab:
+		switch p.kind {
+		case pCommand:
+			a.completeCommand(p)
+		case pPattern:
+			a.setPromptAction(p, nextAction(p.act))
+		}
+		return
+
+	case tcell.KeyBacktab:
+		if p.kind == pPattern {
+			a.setPromptAction(p, prevAction(p.act))
+		}
+		return
+
 	case tcell.KeyLeft:
 		if p.cur > 0 {
 			p.cur--
 		}
+		edited = false
 	case tcell.KeyRight:
 		if p.cur < len(p.buf) {
 			p.cur++
 		}
+		edited = false
 	case tcell.KeyHome, tcell.KeyCtrlA:
 		p.cur = 0
+		edited = false
 	case tcell.KeyEnd, tcell.KeyCtrlE:
 		p.cur = len(p.buf)
+		edited = false
 
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if p.cur > 0 {
@@ -115,9 +268,79 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 		copy(p.buf[p.cur+1:], p.buf[p.cur:])
 		p.buf[p.cur] = ev.Rune()
 		p.cur++
+
+	default:
+		edited = false
 	}
 
+	if edited {
+		p.comps = nil
+		a.updatePreview(string(p.buf))
+	}
+}
+
+// setPromptAction changes what Enter will do, keeping the pattern already typed
+// so a search can be promoted to a filter without retyping it.
+func (a *App) setPromptAction(p *prompt, act promptAction) {
+	p.act = act
+	p.label = act.label(p.back)
+	if a.prev != nil {
+		a.prev.act = act
+	}
 	a.updatePreview(string(p.buf))
+}
+
+// completeCommand fills in a command name from the first word, cycling through
+// the candidates on repeated Tab presses.
+func (a *App) completeCommand(p *prompt) {
+	text := string(p.buf)
+
+	if p.comps == nil {
+		word := text
+		if i := strings.IndexByte(text, ' '); i >= 0 {
+			// Only the command name completes; arguments are free text.
+			if p.cur > i {
+				return
+			}
+			word = text[:i]
+		}
+		p.comps = commandCompletions(word)
+		p.compAt = len(word)
+		p.compIdx = 0
+		if len(p.comps) == 0 {
+			return
+		}
+	} else {
+		p.compIdx = (p.compIdx + 1) % len(p.comps)
+	}
+
+	rest := ""
+	if p.compAt <= len(text) {
+		rest = text[p.compAt:]
+	}
+	chosen := p.comps[p.compIdx]
+	p.buf = []rune(chosen + rest)
+	p.cur = len([]rune(chosen))
+}
+
+// commandCompletions lists command names and aliases starting with prefix.
+func commandCompletions(prefix string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if strings.HasPrefix(s, prefix) && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, s := range config.Specs {
+		add(s.Name)
+	}
+	for alias := range cmdAliases {
+		add(alias)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (p *prompt) deleteWord() {
@@ -182,6 +405,13 @@ func (a *App) drawPrompt(row, w int) {
 	if a.prev != nil {
 		a.putStr(len([]rune(text)), row, a.prev.summary(), st)
 	}
+	if p.kind == pPattern {
+		// A quiet reminder that Tab changes what Enter does.
+		hint := "Tab: " + nextAction(p.act).String() + " "
+		if x := w - len(hint); x > len([]rune(text))+len(a.prev.summary())+1 {
+			a.putStr(x, row, hint, st.Dim(true))
+		}
+	}
 
 	cx := len([]rune(p.label)) + p.cur
 	if cx >= w {
@@ -191,33 +421,25 @@ func (a *App) drawPrompt(row, w int) {
 }
 
 // acceptPrompt performs the action the prompt was opened for.
-func (a *App) acceptPrompt(kind promptKind, text string, color filter.Color) {
+func (a *App) acceptPrompt(kind promptKind, act promptAction, back bool, ruleIndex int, text string, color filter.Color) {
 	trimmed := strings.TrimSpace(text)
 
 	switch kind {
-	case pSearchFwd, pSearchBack:
+	case pPattern:
 		if trimmed == "" {
 			return
 		}
-		a.doSearch(trimmed, kind == pSearchBack)
+		if action, ok := act.rule(); ok {
+			a.addRule(action, trimmed, color)
+			return
+		}
+		a.doSearch(trimmed, back)
 
-	case pOnly:
+	case pRuleEdit:
 		if trimmed == "" {
 			return
 		}
-		a.addRule(filter.Only, trimmed, color)
-
-	case pNever:
-		if trimmed == "" {
-			return
-		}
-		a.addRule(filter.Never, trimmed, color)
-
-	case pHighlight:
-		if trimmed == "" {
-			return
-		}
-		a.addRule(filter.Highlight, trimmed, color)
+		a.replaceRule(ruleIndex, trimmed)
 
 	case pSave:
 		if trimmed == "" {
@@ -240,16 +462,6 @@ func (a *App) acceptPrompt(kind promptKind, text string, color filter.Color) {
 		if trimmed == "" {
 			return
 		}
-		words, err := config.ParseLine(trimmed)
-		if err != nil {
-			a.errorf("%v", err)
-			return
-		}
-		cmd, err := config.ParseCommand(words)
-		if err != nil {
-			a.errorf("%v", err)
-			return
-		}
-		a.exec(cmd)
+		a.runCommandLine(trimmed)
 	}
 }

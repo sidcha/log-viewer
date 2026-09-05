@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -47,6 +48,10 @@ type App struct {
 	lay *layout
 
 	top      int64
+	cur      int64 // cursor line, in view coordinates
+	curCol   int   // cursor byte offset within that line
+	wantCol  int   // column to return to after moving between lines
+	sel      selection
 	hoff     int
 	follow   bool
 	wrap     bool
@@ -86,10 +91,18 @@ type App struct {
 	lastAct  time.Time
 	freed    bool
 
+	// half-typed key sequence and numeric count
+	pending []config.Key
+	count   int64
+
 	histPattern []string
 	histPath    []string
 	histCmd     []string
 }
+
+// maxCount bounds a typed repeat count so a leaning-on-the-keyboard accident
+// cannot ask for an astronomical motion.
+const maxCount = 1 << 40
 
 type searchState struct {
 	m    filter.Matcher
@@ -273,9 +286,63 @@ func (a *App) key(ev *tcell.EventKey) {
 	if a.ov != nil && a.overlayKey(ev) {
 		return
 	}
-	if cmd, ok := a.cfg.Command(config.FromEvent(ev)); ok {
-		a.exec(cmd)
+	a.dispatch(config.FromEvent(ev))
+}
+
+// dispatch feeds one key press into the pending sequence and count.
+//
+// Counts come first and are collected until a non-digit arrives, so 5j moves
+// five lines and 42G jumps to line 42. A leading 0 is the motion, not the start
+// of a count, which is why the digit test depends on whether a count is already
+// building.
+func (a *App) dispatch(k config.Key) {
+	if len(a.pending) == 0 && k.Mod == 0 && k.Key == tcell.KeyRune {
+		if d := k.Ch - '0'; d >= 0 && d <= 9 && !(d == 0 && a.count == 0) {
+			a.count = a.count*10 + int64(d)
+			if a.count > maxCount {
+				a.count = maxCount
+			}
+			return
+		}
 	}
+
+	a.pending = append(a.pending, k)
+	cmd, m := a.lookup(a.pending)
+	switch m {
+	case config.Partial:
+		return
+	case config.Full:
+		count := a.count
+		a.pending, a.count = a.pending[:0], 0
+		a.exec(cmd, count)
+	default:
+		a.pending, a.count = a.pending[:0], 0
+	}
+}
+
+// lookup resolves a sequence against the visual-mode map first when a
+// selection is active, so y can copy the selection while still being the
+// prefix of yy everywhere else.
+func (a *App) lookup(seq []config.Key) (config.Command, config.Match) {
+	if a.visualActive() {
+		if cmd, m := a.cfg.LookupVisual(seq); m != config.NoMatch {
+			return cmd, m
+		}
+	}
+	return a.cfg.Lookup(seq)
+}
+
+// pendingKeys renders the half-typed sequence for the status line, the way vim
+// shows it in the bottom right.
+func (a *App) pendingKeys() string {
+	if a.count == 0 && len(a.pending) == 0 {
+		return ""
+	}
+	out := ""
+	if a.count > 0 {
+		out = strconv.FormatInt(a.count, 10)
+	}
+	return out + config.SequenceString(a.pending)
 }
 
 func (a *App) mouse(ev *tcell.EventMouse) {
@@ -341,15 +408,30 @@ func (a *App) gotoEnd() {
 	a.top = a.lastTop()
 }
 
+// contentWidth is the usable width for log text. It falls back to asking the
+// screen, because a motion can run before the first frame has been drawn.
+func (a *App) contentWidth() int {
+	cols := a.cols
+	if cols <= 0 {
+		cols, _ = a.scr.Size()
+	}
+	return cols - a.gutterWidth()
+}
+
 func (a *App) contentRows() int {
 	if a.rows > 0 {
 		return a.rows
 	}
+	// Before the first frame, work it out the same way draw does. Guessing one
+	// row too few here would make H and L land in the wrong place.
 	_, h := a.scr.Size()
-	if h > 1 {
-		return h - 1
+	if a.showStatus() {
+		h--
 	}
-	return 1
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 // reveal scrolls so that view line i is on screen, biased towards the upper
@@ -363,10 +445,10 @@ func (a *App) reveal(i int64) {
 	a.setTop(i - rows/3)
 }
 
-// anchorSource is the source line number currently at the top of the screen,
-// used to hold position across a rule change.
+// anchorSource is the source line number the cursor is on, used to hold the
+// reading position across a rule change.
 func (a *App) anchorSource() int64 {
-	ln, err := a.activeView().At(a.top, a.linebuf[:0])
+	ln, err := a.activeView().At(a.cursorLine(), a.linebuf[:0])
 	if err != nil {
 		return 0
 	}

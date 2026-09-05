@@ -82,7 +82,7 @@ func (a *App) showStatus() bool {
 	case "off":
 		return a.prompt != nil
 	default:
-		if a.prompt != nil || a.liveMsg() || a.busy != nil {
+		if a.prompt != nil || a.liveMsg() || a.busy != nil || a.pendingKeys() != "" {
 			return true
 		}
 		scanned, total := a.activeView().Progress()
@@ -127,6 +127,8 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 	} else {
 		a.applyStyles(text, idx, base)
 	}
+	a.markCursorLine(idx)
+	a.markSelection(idx, len(ln.Text))
 
 	if !a.wrap {
 		a.paintRow(row, gw, a.hoff, maxCols, base, true, ln)
@@ -183,6 +185,39 @@ func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 	// against whatever is already on screen.
 	if a.prev != nil && a.prev.m != nil {
 		a.paint(a.prev.m, text, a.prev.style, n)
+	}
+}
+
+// markCursorLine tints the row the cursor is on, so the anchor for motions and
+// visual mode is visible.
+func (a *App) markCursorLine(idx int64) {
+	if !a.cfg.Bool("cursor-line") || idx != a.cursorLine() || a.visualActive() {
+		return
+	}
+	// Only the background is taken, so syntax colour on the cursor line is
+	// kept rather than flattened away.
+	_, bg, _ := a.cfg.Style("cursor.line").Decompose()
+	for i := range a.styles {
+		a.styles[i] = a.styles[i].Background(bg)
+	}
+}
+
+// markSelection tints the selected part of a line.
+func (a *App) markSelection(idx int64, length int) {
+	start, end, ok := a.selectedRange(idx, length)
+	if !ok {
+		return
+	}
+	st := a.cfg.Style("selection")
+	cs, ce := a.lay.cellRange(start, end)
+	for k := cs; k < ce && k < len(a.styles); k++ {
+		a.styles[k] = st
+	}
+	if a.sel.mode == visualLine {
+		// A line-wise selection covers the row, not just its text.
+		for k := ce; k < len(a.styles); k++ {
+			a.styles[k] = st
+		}
 	}
 }
 
@@ -334,6 +369,12 @@ func (a *App) stateText() string {
 	}
 
 	var flags []string
+	switch a.sel.mode {
+	case visualChar:
+		flags = append(flags, "VISUAL")
+	case visualLine:
+		flags = append(flags, "VISUAL LINE")
+	}
 	if a.follow {
 		flags = append(flags, "FOLLOW")
 	}
@@ -363,6 +404,9 @@ func (a *App) stateText() string {
 	}
 	if err := a.idx.Err(); err != nil {
 		fmt.Fprintf(&b, "  read error: %v", err)
+	}
+	if pk := a.pendingKeys(); pk != "" {
+		fmt.Fprintf(&b, "   %s", pk)
 	}
 	return b.String()
 }
