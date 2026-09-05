@@ -16,6 +16,7 @@ import (
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/highlight"
 	"github.com/sidcha/log-viewer/internal/index"
+	"github.com/sidcha/log-viewer/internal/ruleset"
 	"github.com/sidcha/log-viewer/internal/source"
 	"github.com/sidcha/log-viewer/internal/ui"
 	"github.com/sidcha/log-viewer/internal/watch"
@@ -44,6 +45,7 @@ type options struct {
 	never      stringList
 	mark       stringList
 	sets       stringList
+	rulesPath  string
 	dumpConfig bool
 	listProf   bool
 	showVer    bool
@@ -87,6 +89,8 @@ func run() int {
 	fs.Var(&opt.mark, "H", "highlight this pattern (repeatable)")
 	fs.Var(&opt.mark, "highlight", "highlight this pattern (repeatable)")
 	fs.Var(&opt.sets, "set", "override a setting, name=value (repeatable)")
+	fs.StringVar(&opt.rulesPath, "r", "", "load rules from a file saved earlier")
+	fs.StringVar(&opt.rulesPath, "rules", "", "load rules from a file saved earlier")
 	fs.BoolVar(&opt.dumpConfig, "dump-config", false, "print the effective configuration and exit")
 	fs.BoolVar(&opt.listProf, "list-profiles", false, "list syntax profiles and exit")
 	fs.BoolVar(&opt.showVer, "V", false, "print version and exit")
@@ -134,18 +138,36 @@ func run() int {
 		return 1
 	}
 
+	// Read the rules before touching the terminal, so a bad path is an
+	// ordinary error message rather than one flashed after an alternate
+	// screen has already been entered.
+	var rules *ruleset.File
+	if opt.rulesPath != "" {
+		rules, err = ruleset.Load(opt.rulesPath)
+		if err == nil {
+			// Compile the patterns now as well, so a bad action or an
+			// unbalanced bracket is reported here rather than once the
+			// alternate screen is already up.
+			_, _, err = rules.Set(cfg.Case())
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "lv: %v\n", err)
+			return 1
+		}
+	}
+
 	// Keep the heap tight: this is a viewer for files far larger than RAM, so
 	// trading a little CPU for a smaller resident set is the right default.
 	debug.SetGCPercent(50)
 
-	if err := serve(cfg, src, prof, &opt); err != nil {
+	if err := serve(cfg, src, prof, rules, &opt); err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
 	return 0
 }
 
-func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, opt *options) error {
+func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rules *ruleset.File, opt *options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
@@ -182,6 +204,11 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, opt 
 	defer icancel()
 	go ixr.Run(ictx)
 
+	// The file comes first so patterns given on the command line add to it
+	// rather than being replaced by it.
+	if err := app.ApplyRuleFile(rules, opt.rulesPath); err != nil {
+		return err
+	}
 	if err := app.ApplyStartup(opt.only, opt.never, opt.mark); err != nil {
 		return err
 	}
@@ -301,6 +328,7 @@ options:
   -o, --only PATTERN     show only matching lines (repeatable)
   -N, --never PATTERN    never show matching lines (repeatable)
   -H, --highlight PAT    mark a pattern without filtering (repeatable)
+  -r, --rules PATH       load rules saved from an earlier session
       --set NAME=VALUE   override one setting (repeatable)
       --dump-config      print the effective configuration and exit
       --list-profiles    list syntax profiles and exit

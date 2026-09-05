@@ -80,9 +80,9 @@ func (a *App) showStatus() bool {
 	case "on":
 		return true
 	case "off":
-		return a.prompt != nil
+		return a.prompt != nil || a.confirm != nil
 	default:
-		if a.prompt != nil || a.liveMsg() || a.busy != nil || a.pendingKeys() != "" {
+		if a.prompt != nil || a.confirm != nil || a.liveMsg() || a.busy != nil || a.pendingKeys() != "" {
 			return true
 		}
 		scanned, total := a.activeView().Progress()
@@ -319,6 +319,10 @@ func (a *App) fillRow(row int, s string, st tcell.Style) {
 // ---------------------------------------------------------------- status line
 
 func (a *App) drawStatus(row, w int) {
+	if a.confirm != nil {
+		a.drawConfirm(row, w)
+		return
+	}
 	if a.prompt != nil {
 		a.drawPrompt(row, w)
 		return

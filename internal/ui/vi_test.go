@@ -417,9 +417,17 @@ func TestCommandLineVimAliases(t *testing.T) {
 		t.Errorf(":hl did not add a highlight")
 	}
 
+	// With rules in play :q asks first; :q! does not.
 	a.runCommandLine("q")
+	if a.quit {
+		t.Error(":q quit without asking about the rules")
+	}
+	if a.confirm == nil {
+		t.Fatal(":q did not ask about the rules")
+	}
+	keys(a, "n") // discard
 	if !a.quit {
-		t.Error(":q did not quit")
+		t.Error("answering discard did not quit")
 	}
 }
 

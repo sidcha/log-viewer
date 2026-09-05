@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +17,8 @@ type promptKind int
 const (
 	pPattern promptKind = iota
 	pSave
+	pSaveRules
+	pLoadRules
 	pGotoLine
 	pCommand
 	pRuleEdit
@@ -114,6 +118,10 @@ type prompt struct {
 	// ruleIndex is the rule being edited, for pRuleEdit.
 	ruleIndex int
 
+	// then runs after the prompt is accepted, used to quit once rules have
+	// been written.
+	then func()
+
 	// completion state for the command line
 	comps   []string
 	compIdx int
@@ -197,12 +205,15 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 			*p.hist = appendHistory(*p.hist, text)
 		}
 		kind, act, back, idx := p.kind, p.act, p.back, p.ruleIndex
+		then := p.then
 		var color filter.Color
 		if a.prev != nil {
 			color = a.prev.color
 		}
 		a.closePrompt()
-		a.acceptPrompt(kind, act, back, idx, text, color)
+		if a.acceptPrompt(kind, act, back, idx, text, color) && then != nil {
+			then()
+		}
 		return
 
 	case tcell.KeyEscape, tcell.KeyCtrlG:
@@ -420,48 +431,55 @@ func (a *App) drawPrompt(row, w int) {
 	a.scr.ShowCursor(cx, row)
 }
 
-// acceptPrompt performs the action the prompt was opened for.
-func (a *App) acceptPrompt(kind promptKind, act promptAction, back bool, ruleIndex int, text string, color filter.Color) {
+// acceptPrompt performs the action the prompt was opened for, reporting
+// whether it succeeded so a follow-up action knows not to run.
+func (a *App) acceptPrompt(kind promptKind, act promptAction, back bool, ruleIndex int, text string, color filter.Color) bool {
 	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
 
 	switch kind {
 	case pPattern:
-		if trimmed == "" {
-			return
-		}
 		if action, ok := act.rule(); ok {
 			a.addRule(action, trimmed, color)
-			return
+			return true
 		}
 		a.doSearch(trimmed, back)
 
 	case pRuleEdit:
-		if trimmed == "" {
-			return
-		}
 		a.replaceRule(ruleIndex, trimmed)
 
 	case pSave:
-		if trimmed == "" {
-			return
-		}
 		a.startSave(trimmed)
 
+	case pSaveRules:
+		return a.saveRules(expandPath(trimmed))
+
+	case pLoadRules:
+		a.loadRulesAt(expandPath(trimmed))
+
 	case pGotoLine:
-		if trimmed == "" {
-			return
-		}
 		n, err := strconv.ParseInt(trimmed, 10, 64)
 		if err != nil {
 			a.errorf("not a line number: %s", trimmed)
-			return
+			return false
 		}
 		a.gotoSourceLine(n)
 
 	case pCommand:
-		if trimmed == "" {
-			return
-		}
 		a.runCommandLine(trimmed)
 	}
+	return true
+}
+
+// expandPath resolves a leading ~ so a path typed at the prompt behaves the
+// way it would in a shell.
+func expandPath(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	return p
 }

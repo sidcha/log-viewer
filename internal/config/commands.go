@@ -102,11 +102,14 @@ var Specs = []Spec{
 	{"filter-list", "filter", 0, 0, "edit, enable and disable the rules"},
 
 	{"save-view", "file", 0, 1, "write the current view to a file (prompts when given no argument)"},
+	{"rules-save", "file", 0, 1, "write the rules to a file so they can be used again"},
+	{"rules-load", "file", 0, 1, "replace the rules with those in a file"},
 
 	{"command", "other", 0, 0, "open the command line"},
 	{"help", "other", 0, 0, "show key bindings"},
 	{"cancel", "other", 0, 0, "leave visual mode, close an overlay, or cancel an operation"},
-	{"quit", "other", 0, 0, "exit"},
+	{"quit", "other", 0, 0, "exit, offering to save the rules first"},
+	{"quit-force", "other", 0, 0, "exit without asking about the rules"},
 	{"nop", "other", 0, 0, "do nothing"},
 }
 

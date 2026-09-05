@@ -318,6 +318,7 @@ var commandLineOnly = map[string]bool{
 	"goto-line":    true, // :42, or 42G
 	"column-reset": true, // 0 already resets the horizontal offset
 	"search-clear": true, // :noh
+	"rules-load":   true, // :source <path>; replacing every rule is not a keystroke
 }
 
 func TestEverySpecIsReachable(t *testing.T) {

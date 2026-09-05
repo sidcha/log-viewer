@@ -55,6 +55,19 @@ func ParseCase(s string) (Case, bool) {
 	return Smart, false
 }
 
+// String is the name ParseCase accepts, so a case mode survives a round trip
+// through a configuration or rules file.
+func (c Case) String() string {
+	switch c {
+	case Sensitive:
+		return "sensitive"
+	case Insensitive:
+		return "insensitive"
+	default:
+		return "smart"
+	}
+}
+
 // Matcher tests a single line.
 type Matcher interface {
 	Match(line []byte) bool

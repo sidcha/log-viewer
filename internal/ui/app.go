@@ -59,11 +59,17 @@ type App struct {
 	bypass   bool
 	statusOn string
 
-	search searchState
-	prompt *prompt
-	prev   *preview
-	ov     *overlay
-	busy   *busyOp
+	search  searchState
+	prompt  *prompt
+	prev    *preview
+	ov      *overlay
+	confirm *confirm
+	busy    *busyOp
+
+	// Where the rules came from, and what they looked like when last written,
+	// so quitting knows whether there is anything to lose.
+	rulesPath   string
+	savedDigest string
 
 	// A position request that cannot be honoured until the filter scan has
 	// reached the relevant part of the file.
@@ -279,6 +285,10 @@ func (a *App) handle(ev tcell.Event) {
 }
 
 func (a *App) key(ev *tcell.EventKey) {
+	if a.confirm != nil {
+		a.confirmKey(ev)
+		return
+	}
 	if a.prompt != nil {
 		a.promptKey(ev)
 		return

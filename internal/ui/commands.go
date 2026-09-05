@@ -39,6 +39,9 @@ func (a *App) ApplyStartup(only, never, marks []string) error {
 	if err := add(filter.Highlight, marks, "--highlight"); err != nil {
 		return err
 	}
+	if set == a.rules {
+		return nil // nothing was given
+	}
 	a.applyRules(set, false)
 	return nil
 }
@@ -63,7 +66,25 @@ func (a *App) exec(cmd config.Command, count int64) {
 	switch cmd.Name {
 	case "nop":
 	case "quit":
+		a.requestQuit()
+	case "quit-force":
 		a.quit = true
+	case "rules-save":
+		if len(cmd.Args) == 1 {
+			a.saveRules(expandPath(cmd.Args[0]))
+			return
+		}
+		if a.rulesPath != "" {
+			a.saveRules(a.rulesPath)
+			return
+		}
+		a.promptSaveRules(nil)
+	case "rules-load":
+		if len(cmd.Args) == 1 {
+			a.loadRulesAt(expandPath(cmd.Args[0]))
+			return
+		}
+		a.openPrompt(pLoadRules, "load rules from: ", &a.histPath)
 	case "cancel":
 		a.cancel()
 	case "help":
@@ -364,6 +385,8 @@ func onOff(b bool) string {
 // cancel unwinds whatever is in front of the user, innermost first.
 func (a *App) cancel() {
 	switch {
+	case a.confirm != nil:
+		a.closeConfirm()
 	case a.visualActive():
 		a.endVisual()
 	case len(a.pending) > 0 || a.count > 0:
@@ -519,6 +542,17 @@ func (a *App) gotoSourceLine(n int64) {
 }
 
 // -------------------------------------------------------------------- search
+
+// setSearchPattern installs a search without starting a scan, for restoring a
+// saved session.
+func (a *App) setSearchPattern(pattern string, back bool) {
+	m, err := filter.Compile(pattern, a.cfg.Case())
+	if err != nil {
+		a.errorf("bad pattern: %v", err)
+		return
+	}
+	a.search = searchState{m: m, pat: pattern, back: back, cur: -1}
+}
 
 func (a *App) doSearch(pattern string, back bool) {
 	m, err := filter.Compile(pattern, a.cfg.Case())
