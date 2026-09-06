@@ -79,11 +79,12 @@ be rebound independently.
 |---|---|
 | `/` `?` | search forward / back — previews as you type |
 | `n` `N` | next / previous match |
+| `C-l` | drop the search highlight and repaint |
 | `*` `#` | search for the word under the cursor (move to it with `w`/`b`/`l`) |
 | `&` `!` `m` | add an only / never / highlight rule |
 | `=` | the rule list: edit, enable, disable, delete |
 | `\` | disable every rule for a moment |
-| `C-p` `C-x` `M-*` | remove the last rule, every rule, every highlight |
+| `C-p` `C-x` `M-*` | remove the last rule, every rule, every highlight rule |
 
 ### View and other
 
@@ -91,7 +92,7 @@ be rebound independently.
 |---|---|
 | `F` | follow the end of the file |
 | `zw` `zn` `zs` | wrap, line numbers, pin the status line |
-| `zr` `C-l` | re-index, repaint |
+| `zr` | re-index |
 | `S` `zS` | save the current view / the rules to a file |
 | `:` | command line |
 | `F1` | help |
@@ -109,7 +110,7 @@ be rebound independently.
 :only ERROR       add a rule
 :never healthz
 :hl OOM
-:noh              clear highlights
+:noh              drop the search highlight (leaves your rules alone)
 :w out.log        write the current view
 :mks rules.json   write the rules
 :source rules.json  load rules from a file
@@ -133,6 +134,10 @@ Filtering and marking are the same thing with three actions:
 Rules form one flat list, evaluated in a single pass over the file. A line is
 shown when it matches at least one `only` rule (or there are none) and matches
 no `never` rule — that is, `grep -e … | grep -v …`.
+
+A search highlight is a separate, transient thing: `/` lights up every match,
+`C-l` or `:noh` drops it, and neither touches the rules you built. The reverse
+holds too — clearing your highlight rules leaves the search for `n` and `N`.
 
 Every rule gets a colour so you can see which one caught which line. Colours are
 picked at random but nudged apart: several candidate hues are drawn and the one

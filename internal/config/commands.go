@@ -90,14 +90,14 @@ var Specs = []Spec{
 	{"search-prev", "search", 0, 0, "jump to the previous match"},
 	{"search-word", "search", 0, 0, "search for the word under the cursor"},
 	{"search-word-back", "search", 0, 0, "search backwards for the word under the cursor"},
-	{"search-clear", "search", 0, 0, "forget the current search"},
+	{"search-clear", "search", 0, 0, "drop the search highlight and repaint"},
 
 	{"filter-only", "filter", 0, 1, "show only lines matching a pattern"},
 	{"filter-never", "filter", 0, 1, "never show lines matching a pattern"},
 	{"highlight", "filter", 0, 1, "mark a pattern without filtering"},
 	{"filter-pop", "filter", 0, 0, "remove the most recent rule"},
 	{"filter-clear", "filter", 0, 0, "remove every rule"},
-	{"highlight-clear", "filter", 0, 0, "remove every highlight, keeping the filters"},
+	{"highlight-clear", "filter", 0, 0, "remove every highlight rule, keeping the filters and the search"},
 	{"filter-bypass", "filter", 0, 0, "temporarily show all lines without losing the rules"},
 	{"filter-list", "filter", 0, 0, "edit, enable and disable the rules"},
 

@@ -237,8 +237,15 @@ func (a *App) exec(cmd config.Command, count int64) {
 	case "search-word-back":
 		a.searchWordUnderCursor(true)
 	case "search-clear":
+		// Also repaint, because C-l is bound here: in vi that key tidies the
+		// screen, and clearing the search highlight is the half of that people
+		// actually reach for.
+		a.scr.Sync()
+		if a.search.m == nil {
+			return
+		}
 		a.search = searchState{cur: -1}
-		a.infof("search cleared")
+		a.infof("search highlight cleared")
 
 	// ----------------------------------------------------------------- rules
 	case "filter-only":
@@ -263,13 +270,14 @@ func (a *App) exec(cmd config.Command, count int64) {
 		a.applyRules(a.rules.Clear(), true)
 		a.infof("rules cleared")
 	case "highlight-clear":
-		if a.rules.Count(filter.Highlight) == 0 && a.search.m == nil {
-			a.infof("no highlights")
+		// Only the rules. A search is transient and belongs to n and N, which
+		// must keep working after the highlights you built up are removed.
+		if a.rules.Count(filter.Highlight) == 0 {
+			a.infof("no highlight rules")
 			return
 		}
-		a.search = searchState{cur: -1}
 		a.applyRules(a.rules.ClearAction(filter.Highlight), true)
-		a.infof("highlights cleared")
+		a.infof("highlight rules cleared")
 	case "filter-bypass":
 		if a.filt == nil {
 			a.infof("nothing is being filtered")

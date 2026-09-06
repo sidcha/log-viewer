@@ -317,7 +317,7 @@ var commandLineOnly = map[string]bool{
 	"set":          true, // :set wrap, like vim
 	"goto-line":    true, // :42, or 42G
 	"column-reset": true, // 0 already resets the horizontal offset
-	"search-clear": true, // :noh
+	"redraw":       true, // C-l clears the search and repaints, as in vi
 	"rules-load":   true, // :source <path>; replacing every rule is not a keystroke
 }
 
