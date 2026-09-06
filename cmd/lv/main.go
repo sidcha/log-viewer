@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/sidcha/log-viewer/internal/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/sidcha/log-viewer/internal/index"
 	"github.com/sidcha/log-viewer/internal/ruleset"
 	"github.com/sidcha/log-viewer/internal/source"
+	"github.com/sidcha/log-viewer/internal/termcolor"
 	"github.com/sidcha/log-viewer/internal/ui"
 	"github.com/sidcha/log-viewer/internal/watch"
 )
@@ -28,6 +31,17 @@ var version = "dev"
 // sniffBytes is how much of the head of the file is read to detect a syntax
 // profile.
 const sniffBytes = 1 << 16
+
+// queryTimeout bounds the wait for a terminal that never answers the colour
+// query. It is paid once, at startup.
+const queryTimeout = 150 * time.Millisecond
+
+// How far the derived tints sit from the terminal background, towards its
+// foreground: enough to see, not enough to distract.
+const (
+	cursorLineMix = 0.14
+	droppedMix    = 0.42
+)
 
 type stringList []string
 
@@ -46,6 +60,7 @@ type options struct {
 	mark       stringList
 	sets       stringList
 	rulesPath  string
+	background string
 	dumpConfig bool
 	listProf   bool
 	showVer    bool
@@ -88,6 +103,7 @@ func run() int {
 	fs.Var(&opt.never, "never", "never show lines matching this pattern (repeatable)")
 	fs.Var(&opt.mark, "H", "highlight this pattern (repeatable)")
 	fs.Var(&opt.mark, "highlight", "highlight this pattern (repeatable)")
+	fs.StringVar(&opt.background, "background", "", "terminal background: auto, dark or light")
 	fs.Var(&opt.sets, "set", "override a setting, name=value (repeatable)")
 	fs.StringVar(&opt.rulesPath, "r", "", "load rules from a file saved earlier")
 	fs.StringVar(&opt.rulesPath, "rules", "", "load rules from a file saved earlier")
@@ -104,7 +120,23 @@ func run() int {
 		return 0
 	}
 
-	cfg, err := config.Load(config.LoadOptions{Path: opt.configPath, NoUser: opt.noConfig})
+	load := config.LoadOptions{Path: opt.configPath, NoUser: opt.noConfig}
+
+	// Two passes: the first only to learn which background the user asked for,
+	// since that decides which half of the theme applies and whether the
+	// terminal is worth asking.
+	pre, err := config.Load(load)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
+		return 1
+	}
+	term := detectColors(pre, &opt)
+	load.Background = "dark"
+	if !term.Dark {
+		load.Background = "light"
+	}
+
+	cfg, err := config.Load(load)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
@@ -113,6 +145,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
+	deriveStyles(cfg, term)
 
 	switch {
 	case opt.dumpConfig:
@@ -166,11 +199,85 @@ func run() int {
 	// trading a little CPU for a smaller resident set is the right default.
 	debug.SetGCPercent(50)
 
-	if err := serve(cfg, src, prof, rules, &opt); err != nil {
+	err = serve(cfg, src, prof, rules, &opt)
+	stopProducer(cfg, src)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// stopProducer ends the process piping into lv once the viewer has gone.
+//
+// Closing our end of the pipe is not enough: the producer only finds out on its
+// next write, and something like `dmesg -w` on a quiet kernel may not write for
+// hours. Until then the shell is still waiting on the pipeline and the terminal
+// looks hung, which is not a reasonable thing to leave behind after q.
+func stopProducer(cfg *config.Config, src *source.Source) {
+	if !src.IsStdin() || !src.Streaming() || !cfg.Bool("stop-producer") {
+		return
+	}
+
+	pid := source.WriterOf(int(os.Stdin.Fd()))
+	if pid == 0 {
+		// Most often the producer runs as another user, so its /proc entries
+		// are unreadable. Say so rather than leave a silent hang.
+		fmt.Fprintln(os.Stderr,
+			"lv: whatever is writing to lv is still running, so this pipeline will not finish; press Ctrl-C")
+		return
+	}
+
+	if err := source.Signal(pid, syscall.SIGTERM); err != nil {
+		name := source.CommandOf(pid)
+		if name == "" {
+			name = "pid " + strconv.Itoa(pid)
+		}
+		fmt.Fprintf(os.Stderr,
+			"lv: %s (pid %d) is still writing and could not be stopped (%v); press Ctrl-C\n",
+			name, pid, err)
+	}
+}
+
+// detectColors works out what the terminal looks like.
+func detectColors(cfg *config.Config, opt *options) termcolor.Colors {
+	forced := cfg.Str("background")
+	if opt.background != "" {
+		forced = opt.background
+	}
+
+	// Asking needs the terminal itself, not stdin, which may be a pipe.
+	var tty *os.File
+	if forced == "auto" {
+		if f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+			tty = f
+			defer f.Close()
+		}
+	}
+	return termcolor.Detect(tty, forced, queryTimeout)
+}
+
+// deriveStyles replaces the tints that only make sense relative to the
+// terminal's actual colours.
+//
+// A cursor line picked as a fixed hex value is a clear band on one theme,
+// invisible on another whose background happens to match it, and a smear on a
+// third. Derived from the real background it sits the same distance from it
+// whatever that is. Anything the user set in a config file is left alone.
+func deriveStyles(cfg *config.Config, term termcolor.Colors) {
+	if !term.Known {
+		return
+	}
+	bg, fg := term.Background, term.Foreground
+
+	cfg.SetDerivedStyle("cursor.line", tcell.StyleDefault.
+		Background(toTcell(termcolor.Blend(bg, fg, cursorLineMix))))
+	cfg.SetDerivedStyle("preview.dropped", tcell.StyleDefault.
+		Foreground(toTcell(termcolor.Blend(bg, fg, droppedMix))))
+}
+
+func toTcell(c termcolor.RGB) tcell.Color {
+	return tcell.NewRGBColor(int32(c.R), int32(c.G), int32(c.B))
 }
 
 func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rules *ruleset.File, opt *options) error {
@@ -285,6 +392,11 @@ func applyFlagOverrides(cfg *config.Config, opt *options) error {
 			return err
 		}
 	}
+	if opt.background != "" {
+		if err := cfg.Set("background", opt.background); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -335,6 +447,7 @@ options:
   -N, --never PATTERN    never show matching lines (repeatable)
   -H, --highlight PAT    mark a pattern without filtering (repeatable)
   -r, --rules PATH       load rules saved from an earlier session
+      --background MODE  auto, dark or light; auto asks the terminal
       --set NAME=VALUE   override one setting (repeatable)
       --dump-config      print the effective configuration and exit
       --list-profiles    list syntax profiles and exit

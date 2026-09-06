@@ -71,6 +71,8 @@ var Settings = []Setting{
 	{"scroll-off", kInt, "3", nil, "lines of context kept above and below the cursor"},
 	{"cursor-line", kBool, "on", nil, "mark the line the cursor is on"},
 	{"clipboard-command", kStr, "", nil, "external clipboard program; empty uses the terminal escape"},
+	{"stop-producer", kBool, "on", nil, "on exit, stop the process piping into lv"},
+	{"background", kEnum, "auto", []string{"auto", "dark", "light"}, "terminal background; auto asks the terminal"},
 }
 
 var settingIndex = func() map[string]*Setting {
@@ -119,6 +121,12 @@ type Config struct {
 	presets  []Preset
 	loaded   []string
 	sourced  map[string]bool
+	// background is the resolved terminal background, selecting which
+	// `background dark { }` blocks apply.
+	background string
+	// styleOrigins records which file defined each style, so a colour derived
+	// from the terminal never overrides one the user chose.
+	styleOrigins map[string]string
 	// origins records which file last set each value, so a surprising
 	// effective value can be traced back to the layer responsible.
 	origins map[string]string
@@ -128,12 +136,13 @@ type Config struct {
 // Bindings, styles and profiles come from the embedded default file.
 func New() *Config {
 	c := &Config{
-		values:  make(map[string]string, len(Settings)),
-		root:    &keyNode{},
-		vroot:   &keyNode{},
-		styles:  make(map[string]tcell.Style),
-		sourced: make(map[string]bool),
-		origins: make(map[string]string),
+		values:       make(map[string]string, len(Settings)),
+		root:         &keyNode{},
+		vroot:        &keyNode{},
+		styles:       make(map[string]tcell.Style),
+		sourced:      make(map[string]bool),
+		origins:      make(map[string]string),
+		styleOrigins: make(map[string]string),
 	}
 	for _, sp := range Settings {
 		c.origins[sp.Name] = Builtin.String()
@@ -222,6 +231,20 @@ func (c *Config) Binds() []Bind { return c.order }
 
 // VisualBinds lists visual-mode bindings.
 func (c *Config) VisualBinds() []Bind { return c.vorder }
+
+// Background is the resolved terminal background, "dark" or "light".
+func (c *Config) Background() string { return c.background }
+
+// SetDerivedStyle installs a style computed from the terminal's own colours,
+// unless a configuration file already defined one. What the user wrote always
+// wins over what lv worked out.
+func (c *Config) SetDerivedStyle(name string, st tcell.Style) bool {
+	if origin, ok := c.styleOrigins[name]; ok && origin != "<builtin>" {
+		return false
+	}
+	c.styles[name] = st
+	return true
+}
 
 // Style looks up a named style, falling back to the default style.
 func (c *Config) Style(name string) tcell.Style {
@@ -383,11 +406,12 @@ func (c *Config) directive(st stmt) error {
 		if len(w) < 3 {
 			return st.errf("usage: style <name> <attr>...")
 		}
-		s, err := parseStyle(w[2:])
+		style, err := parseStyle(w[2:])
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		c.styles[w[1]] = s
+		c.styles[w[1]] = style
+		c.styleOrigins[w[1]] = st.File
 
 	case "rule":
 		if len(w) < 3 {
@@ -433,6 +457,23 @@ func (c *Config) directive(st stmt) error {
 }
 
 func (c *Config) block(head stmt, body []stmt) error {
+	// A background block holds the parts of a theme that only make sense
+	// against a dark or a light terminal.
+	if head.Words[0] == "background" {
+		if len(head.Words) != 2 {
+			return head.errf("usage: background <dark|light> { ... }")
+		}
+		switch head.Words[1] {
+		case "dark", "light":
+		default:
+			return head.errf("background takes dark or light, not %q", head.Words[1])
+		}
+		if head.Words[1] != c.background {
+			return nil // a theme for the other kind of terminal
+		}
+		return c.exec(body)
+	}
+
 	if head.Words[0] != "profile" || len(head.Words) != 2 {
 		return head.errf("usage: profile <name> { ... }")
 	}
