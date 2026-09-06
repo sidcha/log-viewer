@@ -93,6 +93,9 @@ type App struct {
 	locs    [][2]int
 	rows    int
 	cols    int
+	// where the cursor column landed on screen this frame, or -1
+	curX int
+	curY int
 
 	lastLen  int64
 	lastScan int64

@@ -38,8 +38,9 @@ Everything can be replaced by name in your own config.
 
 ### Motions
 
-Motions move a **cursor**; the window follows only when the cursor would leave
-it. Type a count before any of them to repeat it — `5j`, `12k`, `42G`.
+Motions move a **cursor** — a real one, drawn at the character it is on, not
+just a tinted row. The window follows only when the cursor would leave it. Type
+a count before any of them to repeat it — `5j`, `12k`, `42G`.
 
 | | |
 |---|---|
@@ -78,7 +79,7 @@ be rebound independently.
 |---|---|
 | `/` `?` | search forward / back — previews as you type |
 | `n` `N` | next / previous match |
-| `*` `#` | search for the word under the cursor |
+| `*` `#` | search for the word under the cursor (move to it with `w`/`b`/`l`) |
 | `&` `!` `m` | add an only / never / highlight rule |
 | `=` | the rule list: edit, enable, disable, delete |
 | `\` | disable every rule for a moment |

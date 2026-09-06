@@ -296,6 +296,8 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 	defer scr.Fini()
 
 	scr.SetStyle(cfg.Style("default"))
+	// A block, so normal mode reads the way it does in vi.
+	scr.SetCursorStyle(tcell.CursorStyleSteadyBlock)
 	if cfg.Bool("mouse") {
 		scr.EnableMouse(tcell.MouseButtonEvents)
 	}

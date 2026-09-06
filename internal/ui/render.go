@@ -18,6 +18,7 @@ func (a *App) draw() {
 		return
 	}
 	a.cols = w
+	a.curX, a.curY = -1, -1
 
 	status := a.showStatus()
 	rows := h
@@ -62,7 +63,40 @@ func (a *App) draw() {
 	if a.ov != nil {
 		a.ov.draw(a, w, h)
 	}
+	a.placeCursor()
 	a.scr.Show()
+}
+
+// placeCursor puts the terminal cursor where the column actually is.
+//
+// Without it the column is invisible state: h, l, w, b, e and $ move something
+// with nothing to show for it, char-wise visual anchors somewhere unknowable,
+// and * can only ever read whatever column the cursor was left on. A tinted
+// line says which row; it cannot say which character.
+func (a *App) placeCursor() {
+	switch {
+	case a.prompt != nil || a.confirm != nil:
+		return // the prompt put it on the status row
+	case a.ov != nil || a.curX < 0:
+		a.scr.HideCursor()
+	default:
+		a.scr.ShowCursor(a.curX, a.curY)
+	}
+}
+
+// trackCursor records where on screen the cursor column landed, while the line
+// holding it is being laid out and its columns are known.
+func (a *App) trackCursor(row, gw, maxCols int, text []byte) {
+	col := displayColumn(text, a.curCol, a.cfg.Int("tab-width"))
+
+	x, y := gw+col-a.hoff, row
+	if a.wrap && maxCols > 0 {
+		x, y = gw+col%maxCols, row+col/maxCols
+	}
+	if x < gw || x >= a.cols || y < 0 || y >= a.rows {
+		return // scrolled out of view
+	}
+	a.curX, a.curY = x, y
 }
 
 // statusLagBytes is how far behind indexing or filtering must fall before the
@@ -137,6 +171,9 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 	}
 	a.markCursorLine(idx)
 	a.markSelection(idx, len(ln.Text))
+	if idx == a.cursorLine() {
+		a.trackCursor(row, gw, maxCols, ln.Text)
+	}
 
 	if !a.wrap {
 		a.paintRow(row, gw, a.hoff, maxCols, rowBase, true, ln)
