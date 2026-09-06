@@ -13,7 +13,7 @@ import (
 
 // currentRuleFile captures what would be written right now.
 func (a *App) currentRuleFile() *ruleset.File {
-	return ruleset.From(a.rules, a.cfg.Case(), a.search.pat, a.search.back)
+	return ruleset.From(a.rules, a.cfg.Case())
 }
 
 // rulesDirty reports whether there is anything worth saving that is not already
@@ -53,10 +53,6 @@ func (a *App) ApplyRuleFile(f *ruleset.File, path string) error {
 	}
 
 	a.applyRules(set, false)
-	if f.Search != nil && f.Search.Pattern != "" {
-		a.setSearchPattern(f.Search.Pattern, f.Search.Backward)
-	}
-
 	a.rulesPath = path
 	a.savedDigest = a.currentRuleFile().Digest()
 	return nil

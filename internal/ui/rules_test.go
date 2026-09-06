@@ -52,14 +52,42 @@ func TestQuitAsksWhenRulesExist(t *testing.T) {
 	}
 }
 
-func TestQuitAsksAfterASearch(t *testing.T) {
-	// A search is work too, and n/N depend on it.
+// TestSearchAloneDoesNotBlockQuit: searching hides nothing and is replaced by
+// the next pattern typed, so it is not work to be saved.
+func TestSearchAloneDoesNotBlockQuit(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
 	a.doSearch("ERROR", false)
 
 	quitKey(a)
-	if a.confirm == nil {
-		t.Fatal("a search alone did not raise the question")
+	if a.confirm != nil {
+		t.Fatalf("a search raised %q", a.confirm.text)
+	}
+	if !a.quit {
+		t.Fatal("did not quit")
+	}
+}
+
+// TestSearchDoesNotDirtyASavedSet checks the same thing against a loaded file:
+// searching must not make lv think the file needs updating.
+func TestSearchDoesNotDirtyASavedSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rules.json")
+	if err := os.WriteFile(path, []byte(`{"rules":[{"action":"only","pattern":"ERROR"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _ := newTestApp(t, numbered(60))
+	if err := a.LoadRules(path); err != nil {
+		t.Fatal(err)
+	}
+	waitFiltered(t, a)
+
+	a.doSearch("line 01", false)
+	if a.rulesDirty() {
+		t.Error("a search marked the loaded rules as changed")
+	}
+	quitKey(a)
+	if a.confirm != nil {
+		t.Fatalf("a search raised %q", a.confirm.text)
 	}
 }
 
@@ -285,7 +313,6 @@ func TestRulesRoundTripThroughASession(t *testing.T) {
 	first.addRule(filter.Only, "ERROR", filter.Color{})
 	first.addRule(filter.Highlight, "bad", filter.Color{})
 	first.applyRules(first.rules.Toggle(1), false) // leave one disabled
-	first.doSearch("line 01", false)
 	waitFiltered(t, first)
 
 	want := first.viewLen()
@@ -314,9 +341,6 @@ func TestRulesRoundTripThroughASession(t *testing.T) {
 			restored[i].Color != orig[i].Color {
 			t.Errorf("rule %d came back as %+v", i, restored[i])
 		}
-	}
-	if second.search.pat != "line 01" {
-		t.Errorf("search came back as %q", second.search.pat)
 	}
 }
 

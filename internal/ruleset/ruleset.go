@@ -29,9 +29,8 @@ type File struct {
 	// Case is the matching mode the rules were built under. Patterns are
 	// compiled against it on load, so a set saved under `sensitive` does not
 	// quietly widen when reloaded somewhere configured for smart case.
-	Case   string  `json:"case,omitempty"`
-	Rules  []Rule  `json:"rules"`
-	Search *Search `json:"search,omitempty"`
+	Case  string `json:"case,omitempty"`
+	Rules []Rule `json:"rules"`
 }
 
 // Rule is one saved rule.
@@ -45,19 +44,17 @@ type Rule struct {
 	Color string `json:"color,omitempty"`
 }
 
-// Search is the pattern n and N were last working on.
-type Search struct {
-	Pattern  string `json:"pattern"`
-	Backward bool   `json:"backward,omitempty"`
-}
-
 // Empty reports whether the file would restore nothing.
 func (f *File) Empty() bool {
-	return f == nil || (len(f.Rules) == 0 && f.Search == nil)
+	return f == nil || len(f.Rules) == 0
 }
 
-// From captures a rule set and search pattern for saving.
-func From(set *filter.Set, cs filter.Case, searchPattern string, searchBack bool) *File {
+// From captures a rule set for saving.
+//
+// A search is deliberately not part of this. It hides nothing and is thrown
+// away the moment the next one is typed, so treating it as saveable state
+// would mean asking about work nobody did.
+func From(set *filter.Set, cs filter.Case) *File {
 	f := &File{Version: Version, Case: cs.String()}
 	for _, r := range set.All() {
 		f.Rules = append(f.Rules, Rule{
@@ -66,9 +63,6 @@ func From(set *filter.Set, cs filter.Case, searchPattern string, searchBack bool
 			Disabled: !r.Enabled,
 			Color:    colorHex(r.Color),
 		})
-	}
-	if searchPattern != "" {
-		f.Search = &Search{Pattern: searchPattern, Backward: searchBack}
 	}
 	return f
 }
@@ -187,9 +181,6 @@ func (f *File) Digest() string {
 	fmt.Fprintf(&b, "case=%s\n", f.Case)
 	for _, r := range f.Rules {
 		fmt.Fprintf(&b, "%s\t%s\t%v\t%s\n", r.Action, r.Pattern, r.Disabled, r.Color)
-	}
-	if f.Search != nil {
-		fmt.Fprintf(&b, "search\t%s\t%v\n", f.Search.Pattern, f.Search.Backward)
 	}
 	return b.String()
 }

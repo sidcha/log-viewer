@@ -545,17 +545,6 @@ func (a *App) gotoSourceLine(n int64) {
 
 // -------------------------------------------------------------------- search
 
-// setSearchPattern installs a search without starting a scan, for restoring a
-// saved session.
-func (a *App) setSearchPattern(pattern string, back bool) {
-	m, err := filter.Compile(pattern, a.cfg.Case())
-	if err != nil {
-		a.errorf("bad pattern: %v", err)
-		return
-	}
-	a.search = searchState{m: m, pat: pattern, back: back, cur: -1}
-}
-
 func (a *App) doSearch(pattern string, back bool) {
 	m, err := filter.Compile(pattern, a.cfg.Case())
 	if err != nil {

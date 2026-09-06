@@ -35,7 +35,7 @@ func TestRoundTrip(t *testing.T) {
 		rule(t, filter.Highlight, `OOM|oom-killer`, true),
 	)
 
-	f := From(set, filter.Sensitive, "timeout", true)
+	f := From(set, filter.Sensitive)
 	path := filepath.Join(t.TempDir(), "rules.json")
 	if err := f.Save(path); err != nil {
 		t.Fatal(err)
@@ -72,9 +72,22 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("rule %d colour = %+v, want %+v", i, loaded[i].Color, orig[i].Color)
 		}
 	}
+}
 
-	if back.Search == nil || back.Search.Pattern != "timeout" || !back.Search.Backward {
-		t.Errorf("search came back as %+v", back.Search)
+// TestSearchIsNotSaved: a search hides nothing and is replaced by the next
+// one, so it is not part of what a rules file restores.
+func TestSearchIsNotSaved(t *testing.T) {
+	f := From(mustSet(t, rule(t, filter.Only, "ERROR", true)), filter.Smart)
+	path := filepath.Join(t.TempDir(), "rules.json")
+	if err := f.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "search") {
+		t.Errorf("the rules file mentions a search:\n%s", b)
 	}
 }
 
@@ -82,7 +95,7 @@ func TestRoundTrip(t *testing.T) {
 // matching must not quietly widen when reloaded somewhere set to smart.
 func TestCaseIsPreserved(t *testing.T) {
 	set := mustSet(t, rule(t, filter.Only, "error", true))
-	f := From(set, filter.Sensitive, "", false)
+	f := From(set, filter.Sensitive)
 
 	path := filepath.Join(t.TempDir(), "rules.json")
 	if err := f.Save(path); err != nil {
@@ -209,20 +222,17 @@ func TestFutureVersionIsRefused(t *testing.T) {
 
 func TestDigestDetectsChange(t *testing.T) {
 	set := mustSet(t, rule(t, filter.Only, "ERROR", true))
-	a := From(set, filter.Smart, "", false)
+	a := From(set, filter.Smart)
 
-	if a.Digest() != From(set, filter.Smart, "", false).Digest() {
+	if a.Digest() != From(set, filter.Smart).Digest() {
 		t.Error("the same set produced different digests")
 	}
 
 	bigger := set.Add(rule(t, filter.Never, "noise", true))
-	if a.Digest() == From(bigger, filter.Smart, "", false).Digest() {
+	if a.Digest() == From(bigger, filter.Smart).Digest() {
 		t.Error("adding a rule did not change the digest")
 	}
-	if a.Digest() == From(set, filter.Smart, "timeout", false).Digest() {
-		t.Error("adding a search did not change the digest")
-	}
-	if a.Digest() == From(set.Toggle(0), filter.Smart, "", false).Digest() {
+	if a.Digest() == From(set.Toggle(0), filter.Smart).Digest() {
 		t.Error("disabling a rule did not change the digest")
 	}
 }
@@ -231,7 +241,7 @@ func TestSaveIsAtomicAndCreatesDirectories(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "deeper", "rules.json")
 
-	f := From(mustSet(t, rule(t, filter.Only, "ERROR", true)), filter.Smart, "", false)
+	f := From(mustSet(t, rule(t, filter.Only, "ERROR", true)), filter.Smart)
 	if err := f.Save(path); err != nil {
 		t.Fatal(err)
 	}
@@ -261,19 +271,16 @@ func TestEmpty(t *testing.T) {
 	if (*File)(nil).Empty() != true {
 		t.Error("a nil file should be empty")
 	}
-	f := From(mustSet(t, rule(t, filter.Only, "x", true)), filter.Smart, "", false)
+	f := From(mustSet(t, rule(t, filter.Only, "x", true)), filter.Smart)
 	if f.Empty() {
 		t.Error("a file with a rule should not be empty")
-	}
-	if (&File{Search: &Search{Pattern: "x"}}).Empty() {
-		t.Error("a file with only a search should not be empty")
 	}
 }
 
 func TestSavedFileIsReadable(t *testing.T) {
 	// The format is meant to be edited by hand and reviewed in a diff, so the
 	// output has to be indented and stable.
-	f := From(mustSet(t, rule(t, filter.Only, "ERROR", true)), filter.Smart, "", false)
+	f := From(mustSet(t, rule(t, filter.Only, "ERROR", true)), filter.Smart)
 	path := filepath.Join(t.TempDir(), "rules.json")
 	if err := f.Save(path); err != nil {
 		t.Fatal(err)

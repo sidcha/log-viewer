@@ -10,7 +10,8 @@ size, not of the log.
 ```sh
 lv /var/log/syslog          # open a file
 lv -f /var/log/kern.log     # follow it, like tail -f
-journalctl -f | lv          # read a pipe
+journalctl -f | lv          # read a pipe, following it
+qemu-system-x86_64 … 2>&1 | lv -r boot.json
 lv -o ERROR -N healthcheck app.log
 lv -r incident.json app.log  # reuse rules saved earlier
 ```
@@ -180,10 +181,13 @@ but the action and the pattern is optional:
     { "action": "only",      "pattern": "ERROR", "color": "#8decc8" },
     { "action": "never",     "pattern": "GET /healthz", "disabled": true },
     { "action": "highlight", "pattern": "OOM|oom-killer" }
-  ],
-  "search": { "pattern": "timeout" }
+  ]
 }
 ```
+
+A search is not part of this. It hides nothing and is replaced by the next
+pattern typed, so it never counts as unsaved work: searching and then quitting
+asks nothing.
 
 The case mode is recorded because it is part of what the rules mean: a set built
 under `sensitive` would quietly widen if it were reloaded somewhere configured
@@ -352,7 +356,9 @@ on`; otherwise point `clipboard-command` at an external program.
 
 A pipe is spooled to an unlinked temporary file, so seeking, filtering and
 saving work on piped input exactly as they do on a file, and nothing is left
-behind when `lv` exits.
+behind when `lv` exits. Reading a pipe starts in follow mode, since a stream
+has no history to explore and the interesting end is the one still being
+written; `F` or `:set follow off` stops it, as does any upward motion.
 
 ## Testing
 
