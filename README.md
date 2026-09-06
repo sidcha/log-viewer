@@ -255,6 +255,7 @@ set follow on
 set case sensitive
 set scroll-off 5
 set cursor-line off
+set background dark
 set clipboard-command wl-copy
 
 # Key sequences are written as vim writes them.
@@ -269,6 +270,11 @@ rule highlight 'OOM|oom-killer' color=#ff5555
 
 style syntax.level.error fg=#ff0000 bold
 style cursor.line        bg=#303030
+
+# Colours that only suit one kind of terminal go in a background block.
+background light {
+    style cursor.line bg=#eaeef2
+}
 
 profile myapp {
     match '*.applog'
@@ -288,6 +294,35 @@ specification or a pattern must be quoted: `bind '#' search-word-back`.
 
 Unknown settings, commands, styles and keys are errors at startup rather than
 silent no-ops. `lv --dump-config` prints the merged result, re-parseable as-is.
+
+## Terminal colours
+
+lv has to look right on a black terminal, a white one, and whatever gruvbox or
+solarized variant you actually use. Absolute colours cannot do that: a cursor
+line of `#1c1c1c` is a clear band on a black terminal, invisible on one whose
+background happens to be `#1c1c1c`, and a dark smear on a light one.
+
+So lv asks. On startup it queries the terminal for its real foreground and
+background (OSC 10 and OSC 11) and derives the background-relative tints — the
+cursor line, and the dimming used while previewing a filter — by moving a fixed
+distance from the background towards the foreground. Those then sit correctly
+against any theme, without lv knowing which one it is.
+
+The rest of the palette is a pair of themes, chosen by whether the background
+came back dark or light. When the terminal will not answer, `COLORFGBG` decides;
+failing that, lv assumes dark.
+
+```sh
+lv --background light app.log     # skip detection
+lv config background dark         # or settle it permanently
+```
+
+Anything you set yourself wins: a `style cursor.line …` in your config is never
+replaced by a derived colour. To see what was resolved:
+
+```sh
+lv --background light --dump-config | grep '^style'
+```
 
 ## Syntax highlighting
 

@@ -97,11 +97,16 @@ type LoadOptions struct {
 	Path string
 	// NoUser skips every layer outside the binary.
 	NoUser bool
+	// Background selects which `background dark|light { }` blocks apply.
+	// Empty skips them all, which is what the first pass wants: it only needs
+	// the settings, to find out which background to resolve.
+	Background string
 }
 
 // Load builds the effective configuration by cascading the layers.
 func Load(opt LoadOptions) (*Config, error) {
 	c := New()
+	c.background = opt.Background
 	if err := c.Parse("<builtin>", defaultConf); err != nil {
 		return nil, fmt.Errorf("built-in config: %w", err)
 	}

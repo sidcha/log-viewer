@@ -345,3 +345,106 @@ func TestEverySpecIsReachable(t *testing.T) {
 		}
 	}
 }
+
+// TestBackgroundBlocks: a theme has to be able to say "these colours are for a
+// dark terminal", or every value is wrong for half the people using it.
+func TestBackgroundBlocks(t *testing.T) {
+	src := `
+style cursor.line bg=#000000
+background dark {
+    style cursor.line bg=#303030
+}
+background light {
+    style cursor.line bg=#eaeef2
+}
+`
+	for _, mode := range []string{"dark", "light"} {
+		c := New()
+		c.background = mode
+		if err := c.Parse("t", src); err != nil {
+			t.Fatalf("%s: %v", mode, err)
+		}
+		_, bg, _ := c.Style("cursor.line").Decompose()
+		want := map[string]int32{"dark": 0x303030, "light": 0xeaeef2}[mode]
+		r, g, b := bg.RGB()
+		if got := r<<16 | g<<8 | b; got != want {
+			t.Errorf("%s background: cursor.line = %06x, want %06x", mode, got, want)
+		}
+	}
+
+	// With no background resolved yet, neither block applies.
+	c := New()
+	if err := c.Parse("t", src); err != nil {
+		t.Fatal(err)
+	}
+	_, bg, _ := c.Style("cursor.line").Decompose()
+	if r, g, b := bg.RGB(); r|g|b != 0 {
+		t.Errorf("unresolved background applied a block: %v", bg)
+	}
+}
+
+func TestBackgroundBlockErrors(t *testing.T) {
+	for _, src := range []string{
+		"background {\n}",
+		"background sideways {\n}",
+		"background dark light {\n}",
+	} {
+		c := New()
+		c.background = "dark"
+		if err := c.Parse("t", src); err == nil {
+			t.Errorf("%q was accepted", src)
+		}
+	}
+}
+
+// TestDerivedStyleYieldsToTheUser: a colour lv computed from the terminal must
+// never overwrite one someone wrote down.
+func TestDerivedStyleYieldsToTheUser(t *testing.T) {
+	c := New()
+	c.background = "dark"
+	if err := c.Parse("<builtin>", "style cursor.line bg=#303030"); err != nil {
+		t.Fatal(err)
+	}
+
+	derived := tcell.StyleDefault.Background(tcell.NewRGBColor(0x11, 0x22, 0x33))
+	if !c.SetDerivedStyle("cursor.line", derived) {
+		t.Fatal("a built-in style should be replaceable by a derived one")
+	}
+	if _, bg, _ := c.Style("cursor.line").Decompose(); bg != tcell.NewRGBColor(0x11, 0x22, 0x33) {
+		t.Error("the derived style was not applied over the built-in one")
+	}
+
+	// Now the same style, but set by a user file.
+	if err := c.Parse("mine.conf", "style cursor.line bg=#445566"); err != nil {
+		t.Fatal(err)
+	}
+	if c.SetDerivedStyle("cursor.line", derived) {
+		t.Error("a derived style overrode the user's own")
+	}
+	if _, bg, _ := c.Style("cursor.line").Decompose(); bg != tcell.NewRGBColor(0x44, 0x55, 0x66) {
+		t.Error("the user's colour was lost")
+	}
+}
+
+// TestBothThemesDefineTheSameStyles keeps the light theme from missing one and
+// leaving a dark-terminal colour on a light screen.
+func TestBothThemesDefineTheSameStyles(t *testing.T) {
+	dark, err := Load(LoadOptions{NoUser: true, Background: "dark"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	light, err := Load(LoadOptions{NoUser: true, Background: "light"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name := range dark.styles {
+		if strings.HasPrefix(name, "hl.") {
+			continue
+		}
+		d, l := dark.Style(name), light.Style(name)
+		if d == l {
+			t.Errorf("style %q is identical on both backgrounds; one of them is wrong", name)
+		}
+	}
+}
