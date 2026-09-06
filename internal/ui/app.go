@@ -377,41 +377,19 @@ func (a *App) mouse(ev *tcell.EventMouse) {
 			a.ov.scroll(-int(step))
 			return
 		}
-		a.follow = false
-		a.moveBy(-step)
+		a.scrollView(-step)
 	case ev.Buttons()&tcell.WheelDown != 0:
 		if a.ov != nil {
 			a.ov.scroll(int(step))
 			return
 		}
-		a.moveBy(step)
+		a.scrollView(step)
 	}
 }
 
 // --------------------------------------------------------------- positioning
 
 func (a *App) viewLen() int64 { return a.activeView().Len() }
-
-func (a *App) moveBy(n int64) {
-	a.setTop(a.top + n)
-}
-
-func (a *App) setTop(t int64) {
-	max := a.viewLen() - 1
-	if max < 0 {
-		max = 0
-	}
-	if t > max {
-		t = max
-	}
-	if t < 0 {
-		t = 0
-	}
-	a.top = t
-	if a.follow && t < a.lastTop() {
-		a.follow = false
-	}
-}
 
 // lastTop is the top line that shows the final screenful.
 func (a *App) lastTop() int64 {
@@ -468,15 +446,20 @@ func (a *App) contentRows() int {
 	return h
 }
 
-// reveal scrolls so that view line i is on screen, biased towards the upper
-// third so there is context below a search hit.
+// reveal puts the cursor on view line i, which is where a search hit belongs:
+// moving only the window would leave the cursor elsewhere, and the next motion
+// would jump away from the match.
 func (a *App) reveal(i int64) {
 	rows := int64(a.contentRows())
-	if i >= a.top && i < a.top+rows {
-		return
-	}
+	onScreen := i >= a.top && i < a.top+rows
+
 	a.follow = false
-	a.setTop(i - rows/3)
+	a.setCursor(i)
+	if !onScreen {
+		// Bias towards the upper third so there is context below the hit.
+		a.top = i - rows/3
+		a.clampTop()
+	}
 }
 
 // anchorSource is the source line number the cursor is on, used to hold the
