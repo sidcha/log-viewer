@@ -119,6 +119,14 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 		text = text[:a.lay.used]
 	}
 
+	rowBase := base
+	if bg, ok := a.cursorTint(idx); ok {
+		// The band has to cover the whole row, not just the characters. Tinting
+		// only the text leaves it ending raggedly wherever the line happens to
+		// stop, which reads as a smudge rather than a cursor line.
+		rowBase = base.Background(bg)
+	}
+
 	if dropped, _ := a.prev.verdict(ln.Text); dropped {
 		// The candidate rule would remove this line. Paint the whole thing in
 		// one muted style rather than letting syntax colour argue with it, so
@@ -131,7 +139,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 	a.markSelection(idx, len(ln.Text))
 
 	if !a.wrap {
-		a.paintRow(row, gw, a.hoff, maxCols, base, true, ln)
+		a.paintRow(row, gw, a.hoff, maxCols, rowBase, true, ln)
 		return 1
 	}
 
@@ -143,7 +151,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 		used = avail
 	}
 	for r := 0; r < used; r++ {
-		a.paintRow(row+r, gw, r*maxCols, maxCols, base, r == 0, ln)
+		a.paintRow(row+r, gw, r*maxCols, maxCols, rowBase, r == 0, ln)
 	}
 	return used
 }
@@ -188,17 +196,29 @@ func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 	}
 }
 
-// markCursorLine tints the row the cursor is on, so the anchor for motions and
-// visual mode is visible.
-func (a *App) markCursorLine(idx int64) {
+// cursorTint reports the background for the row the cursor is on.
+func (a *App) cursorTint(idx int64) (tcell.Color, bool) {
 	if !a.cfg.Bool("cursor-line") || idx != a.cursorLine() || a.visualActive() {
+		return tcell.ColorDefault, false
+	}
+	_, bg, _ := a.cfg.Style("cursor.line").Decompose()
+	return bg, bg != tcell.ColorDefault
+}
+
+// markCursorLine tints the text on the cursor's row.
+//
+// Cells that already carry a background belong to a rule or a match, and those
+// keep it: overwriting them would drop the colour that says why the line is on
+// screen, and would leave dark text sitting on the tint.
+func (a *App) markCursorLine(idx int64) {
+	bg, ok := a.cursorTint(idx)
+	if !ok {
 		return
 	}
-	// Only the background is taken, so syntax colour on the cursor line is
-	// kept rather than flattened away.
-	_, bg, _ := a.cfg.Style("cursor.line").Decompose()
 	for i := range a.styles {
-		a.styles[i] = a.styles[i].Background(bg)
+		if _, cur, _ := a.styles[i].Decompose(); cur == tcell.ColorDefault {
+			a.styles[i] = a.styles[i].Background(bg)
+		}
 	}
 }
 
@@ -239,6 +259,9 @@ func (a *App) paintRow(row, gw, startCol, maxCols int, base tcell.Style, first b
 	if gw > 0 {
 		sep := a.cfg.Str("gutter")
 		gstyle := a.cfg.Style("gutter")
+		if _, bg, _ := base.Decompose(); bg != tcell.ColorDefault {
+			gstyle = gstyle.Background(bg)
+		}
 		if first {
 			num := strconv.FormatInt(ln.Num, 10)
 			pad := gw - len([]rune(sep)) - len(num)

@@ -254,6 +254,7 @@ The file syntax is tmux-flavoured: one directive per line, `#` comments,
 set follow on
 set case sensitive
 set scroll-off 5
+set cursor-line off
 set clipboard-command wl-copy
 
 # Key sequences are written as vim writes them.
@@ -267,6 +268,7 @@ rule never     'GET /healthz'
 rule highlight 'OOM|oom-killer' color=#ff5555
 
 style syntax.level.error fg=#ff0000 bold
+style cursor.line        bg=#303030
 
 profile myapp {
     match '*.applog'
