@@ -132,6 +132,12 @@ func run() int {
 	}
 	defer src.Close()
 
+	// A pipe has no history to explore: the interesting end is the one still
+	// being written. Follow it unless someone has said otherwise.
+	if src.IsStdin() && !opt.follow && cfg.Origin("follow") == config.Builtin.String() {
+		_ = cfg.Set("follow", "on")
+	}
+
 	prof, err := pickProfile(cfg, src, opt.profile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
@@ -321,7 +327,7 @@ usage:
 options:
   -c, --config PATH      read this configuration file
       --no-config        ignore user configuration
-  -f, --follow           start pinned to the end of the file
+  -f, --follow           start pinned to the end of the file (default when piped)
   -w, --wrap             wrap long lines
   -n, --line-numbers     show a line-number gutter
   -p, --profile NAME     force a syntax profile ("none" disables highlighting)

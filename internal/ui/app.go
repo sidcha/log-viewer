@@ -39,10 +39,12 @@ type App struct {
 	src *source.Source
 	idx *index.Index
 
-	base  *view.Base
-	filt  *view.Filtered
-	rules *filter.Set
-	gen   int // bumped whenever the active view is replaced
+	base *view.Base
+	filt *view.Filtered
+	// filtPtr mirrors filt for goroutines other than the event loop.
+	filtPtr atomic.Pointer[view.Filtered]
+	rules   *filter.Set
+	gen     int // bumped whenever the active view is replaced
 
 	eng *highlight.Engine
 	lay *layout
@@ -156,9 +158,15 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 	return a
 }
 
-// Wake asks the event loop to repaint. It is safe to call from any goroutine
-// and never blocks: a pending wake already covers a new one.
+// Wake asks the event loop to repaint, and tells any filter scan that more of
+// the file has arrived. It is safe to call from any goroutine and never blocks.
+//
+// The filtered view is reached through an atomic pointer because this runs on
+// the indexer's goroutine while the UI goroutine owns the field itself.
 func (a *App) Wake() {
+	if f := a.filtPtr.Load(); f != nil {
+		f.Nudge()
+	}
 	select {
 	case a.wake <- struct{}{}:
 	default:
@@ -414,8 +422,24 @@ func (a *App) lastTop() int64 {
 	return t
 }
 
-func (a *App) gotoEnd() {
+// pinToTail puts the cursor on the last line with the window under it.
+//
+// Follow mode has to carry the cursor, not just the window. Leaving it behind
+// means yanking copies a line that scrolled off long ago, and the first motion
+// snaps the view back to wherever the cursor was stranded.
+func (a *App) pinToTail() {
+	n := a.viewLen()
+	if n == 0 {
+		a.cur, a.top = 0, 0
+		return
+	}
+	a.cur = n - 1
 	a.top = a.lastTop()
+	a.restoreColumn()
+}
+
+func (a *App) gotoEnd() {
+	a.pinToTail()
 }
 
 // contentWidth is the usable width for log text. It falls back to asking the
@@ -503,6 +527,7 @@ func (a *App) Close() {
 	if a.filt != nil {
 		a.filt.Close()
 		a.filt = nil
+		a.filtPtr.Store(nil)
 	}
 }
 

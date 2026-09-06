@@ -146,7 +146,7 @@ func (a *App) exec(cmd config.Command, count int64) {
 			return
 		}
 		a.follow = false
-		a.setCursor(a.viewLen() - 1)
+		a.pinToTail()
 	case "goto-line":
 		if len(cmd.Args) == 1 {
 			v, err := strconv.ParseInt(cmd.Args[0], 10, 64)
@@ -461,6 +461,7 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 	if a.filt != nil {
 		a.filt.Close()
 		a.filt = nil
+		a.filtPtr.Store(nil)
 	}
 	a.bypass = false
 	a.gen++
@@ -475,6 +476,7 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 			a.cfg.Dur("scan-poll"),
 			a.Wake,
 		)
+		a.filtPtr.Store(a.filt)
 	}
 	if preserve {
 		a.seekSource(anchor)

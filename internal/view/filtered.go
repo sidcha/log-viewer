@@ -53,6 +53,19 @@ type Filtered struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	notify func()
+	// nudge wakes the scan the moment the indexer reports new bytes, so a
+	// filtered view of a live stream is as current as an unfiltered one
+	// instead of trailing it by a poll interval.
+	nudge chan struct{}
+}
+
+// Nudge tells the scan that more of the file is available. It never blocks; a
+// pending nudge already covers a new one.
+func (f *Filtered) Nudge() {
+	select {
+	case f.nudge <- struct{}{}:
+	default:
+	}
 }
 
 // NewFiltered starts a background scan applying rules to the whole file and
@@ -77,6 +90,7 @@ func NewFiltered(src *source.Source, base *index.Index, rules *filter.Set, block
 		stride: ckStride,
 		rd:     rd,
 		notify: notify,
+		nudge:  make(chan struct{}, 1),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -212,6 +226,7 @@ func (f *Filtered) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-f.nudge:
 		case <-tick.C:
 		}
 	}

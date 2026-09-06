@@ -38,7 +38,7 @@ func (a *App) draw() {
 	a.lastScan, _ = v.Progress()
 
 	if a.follow {
-		a.top = a.lastTop()
+		a.pinToTail()
 	}
 
 	gw := a.gutterWidth()
