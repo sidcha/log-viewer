@@ -230,11 +230,16 @@ func (a *App) cursorText() []byte {
 	return ln.Text
 }
 
-// clampColumn keeps the column inside the current line.
+// clampColumn keeps the column on a real character.
+//
+// The position just past the last character is not somewhere the cursor may
+// rest: vi only allows it while inserting, and lv never inserts. Without this,
+// l at the end of a line would park the cursor on empty space and $ and l would
+// disagree about where the end is.
 func (a *App) clampColumn() {
-	n := len(a.cursorText())
-	if a.curCol > n {
-		a.curCol = n
+	last := lastColumn(a.cursorText())
+	if a.curCol > last {
+		a.curCol = last
 	}
 	if a.curCol < 0 {
 		a.curCol = 0
@@ -314,121 +319,6 @@ func runeAt(text []byte, i int) (rune, int) {
 		return 0, 0
 	}
 	return utf8.DecodeRune(text[i:])
-}
-
-// wordForward is w: to the start of the next word.
-func (a *App) wordForward() {
-	text := a.cursorText()
-	i := a.curCol
-	if r, size := runeAt(text, i); size > 0 {
-		start := classOf(r)
-		for i < len(text) {
-			r, size := runeAt(text, i)
-			if size == 0 || classOf(r) != start {
-				break
-			}
-			i += size
-		}
-	}
-	for i < len(text) {
-		r, size := runeAt(text, i)
-		if size == 0 || classOf(r) != classSpace {
-			break
-		}
-		i += size
-	}
-	a.setColumn(i)
-}
-
-// wordBack is b: to the start of the word before the cursor.
-func (a *App) wordBack() {
-	text := a.cursorText()
-	i := a.curCol
-	back := func() bool {
-		if i <= 0 {
-			return false
-		}
-		_, size := utf8.DecodeLastRune(text[:i])
-		if size <= 0 {
-			size = 1
-		}
-		i -= size
-		return true
-	}
-
-	if !back() {
-		return
-	}
-	for {
-		r, size := runeAt(text, i)
-		if size == 0 || classOf(r) != classSpace {
-			break
-		}
-		if !back() {
-			a.setColumn(0)
-			return
-		}
-	}
-	r, _ := runeAt(text, i)
-	want := classOf(r)
-	for i > 0 {
-		prev := i
-		if !back() {
-			break
-		}
-		r, size := runeAt(text, i)
-		if size == 0 || classOf(r) != want {
-			i = prev
-			break
-		}
-	}
-	a.setColumn(i)
-}
-
-// wordEnd is e: to the last character of the current or next word.
-func (a *App) wordEnd() {
-	text := a.cursorText()
-	i := a.curCol
-	advance := func() bool {
-		if i >= len(text) {
-			return false
-		}
-		_, size := runeAt(text, i)
-		if size <= 0 {
-			size = 1
-		}
-		i += size
-		return true
-	}
-
-	if !advance() {
-		return
-	}
-	for {
-		r, size := runeAt(text, i)
-		if size == 0 || classOf(r) != classSpace {
-			break
-		}
-		if !advance() {
-			a.columnEnd()
-			return
-		}
-	}
-	r, _ := runeAt(text, i)
-	want := classOf(r)
-	for {
-		prev := i
-		if !advance() {
-			i = prev
-			break
-		}
-		r, size := runeAt(text, i)
-		if size == 0 || classOf(r) != want {
-			i = prev
-			break
-		}
-	}
-	a.setColumn(i)
 }
 
 // wordUnderCursor returns the word the cursor sits on, which is what * marks.

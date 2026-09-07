@@ -42,10 +42,14 @@ Motions move a **cursor** — a real one, drawn at the character it is on, not
 just a tinted row. The window follows only when the cursor would leave it. Type
 a count before any of them to repeat it — `5j`, `12k`, `42G`.
 
+`w`, `b` and `e` run on past the end of a line, as they do in vi; `h` and `l`
+stay put, matching vi's default. With a filter on they follow what is on
+screen, so the next word is on the next *visible* line.
+
 | | |
 |---|---|
 | `h` `j` `k` `l` | left, down, up, right |
-| `w` `b` `e` | word forward, word back, end of word |
+| `w` `b` `e` | word forward, word back, end of word — these cross lines |
 | `0` `^` `$` | start of line, first non-blank, end of line |
 | `gg` `G` | first line, last line (`42G` for line 42) |
 | `H` `M` `L` | top, middle, bottom of the window |

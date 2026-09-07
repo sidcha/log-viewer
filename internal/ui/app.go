@@ -89,6 +89,9 @@ type App struct {
 
 	// frame scratch, reused to keep drawing allocation-free
 	linebuf []byte
+	// walkbuf belongs to the word motions, which read lines other than the
+	// one being drawn.
+	walkbuf []byte
 	styles  []tcell.Style
 	locs    [][2]int
 	rows    int
