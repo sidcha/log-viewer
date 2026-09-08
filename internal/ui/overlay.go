@@ -35,6 +35,17 @@ type overlay struct {
 	rows  []ovRow
 	top   int
 	sel   int
+	// body is how many rows the panel showed last time it was drawn, so a
+	// page key moves by what is actually on screen.
+	body int
+}
+
+// page is how far Space and its counterparts move.
+func (o *overlay) page() int {
+	if o.body > 1 {
+		return o.body - 1
+	}
+	return 1
 }
 
 func (o *overlay) scroll(n int) {
@@ -109,6 +120,7 @@ func (o *overlay) draw(a *App, w, h int) {
 
 	inner := x1 - x0 - 1
 	body := y1 - y0 - 1
+	o.body = body
 
 	drawBox(a.scr, x0, y0, x1, y1, st)
 	a.putStr(x0+2, y0, " "+o.title+" ", title)
@@ -196,105 +208,118 @@ func (a *App) putStr(x, y int, s string, st tcell.Style) {
 	}
 }
 
-// overlayKey handles a key while an overlay is open, reporting whether it was
-// consumed.
+// overlayKey handles a key while an overlay is open.
+//
+// It always reports the key as consumed. Letting an unrecognised key through
+// meant the log scrolled about behind the help, and a stray `/` opened a search
+// prompt under a panel covering it. A panel on screen owns the keyboard; q and
+// Escape close it.
 func (a *App) overlayKey(ev *tcell.EventKey) bool {
 	o := a.ov
 
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		a.ov = nil
-		return true
+	case tcell.KeyUp:
+		o.moveSel(-1)
+	case tcell.KeyDown:
+		o.moveSel(1)
+	case tcell.KeyPgUp, tcell.KeyCtrlB:
+		o.scroll(-o.page())
+	case tcell.KeyPgDn, tcell.KeyCtrlF:
+		o.scroll(o.page())
+	case tcell.KeyHome:
+		o.scroll(-len(o.rows))
+	case tcell.KeyEnd:
+		o.scroll(len(o.rows))
 	case tcell.KeyEnter:
 		if o.kind == ovRules {
 			if i := o.selected(); i >= 0 {
 				a.applyRules(a.rules.Toggle(i), true)
 				a.showRules()
 			}
-			return true
 		}
-	case tcell.KeyUp:
-		o.moveSel(-1)
-		return true
-	case tcell.KeyDown:
-		o.moveSel(1)
-		return true
-	case tcell.KeyPgUp:
-		o.scroll(-10)
-		return true
-	case tcell.KeyPgDn:
-		o.scroll(10)
-		return true
 	case tcell.KeyRune:
-		switch ev.Rune() {
-		case 'q':
-			a.ov = nil
-			return true
-		case 'k':
-			o.moveSel(-1)
-			return true
-		case 'j':
-			o.moveSel(1)
-			return true
-		case ' ':
-			if o.kind == ovRules {
-				if i := o.selected(); i >= 0 {
-					a.applyRules(a.rules.Toggle(i), true)
-					a.showRules()
-				}
-				return true
-			}
-		case 'd', 'x':
-			if o.kind == ovRules {
-				if i := o.selected(); i >= 0 {
-					a.applyRules(a.rules.Remove(i), true)
-					a.showRules()
-				}
-				return true
-			}
-		case 'e', 'i', 'c':
-			if o.kind == ovRules {
-				if i := o.selected(); i >= 0 {
-					a.ov = nil
-					a.openRuleEdit(i)
-				}
-				return true
-			}
-		case 'a':
-			if o.kind == ovRules {
-				if i := o.selected(); i >= 0 {
-					a.cycleRuleAction(i)
-				}
-				return true
-			}
-		case 'r':
-			if o.kind == ovRules {
-				if i := o.selected(); i >= 0 {
-					a.recolourRule(i)
-				}
-				return true
-			}
-		case 'A':
-			if o.kind == ovRules {
-				a.applyRules(a.rules.SetAll(true), true)
-				a.showRules()
-				return true
-			}
-		case 'D':
-			if o.kind == ovRules {
-				a.applyRules(a.rules.SetAll(false), true)
-				a.showRules()
-				return true
-			}
-		}
+		a.overlayRune(o, ev.Rune(), ev.Modifiers())
 	}
-	return false
+	return true
+}
+
+// overlayRune dispatches a printable key inside a panel.
+//
+// The rules list claims a handful of letters for editing, so those are taken
+// first; everything else is panel navigation, shared by every overlay.
+func (a *App) overlayRune(o *overlay, r rune, mod tcell.ModMask) {
+	if o.kind == ovRules && a.rulesListRune(o, r) {
+		return
+	}
+
+	switch r {
+	case 'q':
+		a.ov = nil
+	case 'k':
+		o.moveSel(-1)
+	case 'j':
+		o.moveSel(1)
+	case 'g':
+		o.scroll(-len(o.rows))
+	case 'G':
+		o.scroll(len(o.rows))
+	case 'b':
+		o.scroll(-o.page())
+	case ' ':
+		// Shift-Space pages back, on terminals that report it.
+		if mod&tcell.ModShift != 0 {
+			o.scroll(-o.page())
+			return
+		}
+		o.scroll(o.page())
+	}
+}
+
+// rulesListRune handles the keys that edit rules, reporting whether it took
+// the key.
+func (a *App) rulesListRune(o *overlay, r rune) bool {
+	switch r {
+	case ' ':
+		if i := o.selected(); i >= 0 {
+			a.applyRules(a.rules.Toggle(i), true)
+			a.showRules()
+		}
+	case 'd', 'x':
+		if i := o.selected(); i >= 0 {
+			a.applyRules(a.rules.Remove(i), true)
+			a.showRules()
+		}
+	case 'e', 'i', 'c':
+		if i := o.selected(); i >= 0 {
+			a.ov = nil
+			a.openRuleEdit(i)
+		}
+	case 'a':
+		if i := o.selected(); i >= 0 {
+			a.cycleRuleAction(i)
+		}
+	case 'r':
+		if i := o.selected(); i >= 0 {
+			a.recolourRule(i)
+		}
+	case 'A':
+		a.applyRules(a.rules.SetAll(true), true)
+		a.showRules()
+	case 'D':
+		a.applyRules(a.rules.SetAll(false), true)
+		a.showRules()
+	default:
+		return false
+	}
+	return true
 }
 
 // ------------------------------------------------------------ overlay builders
 
 func (a *App) showHelp() {
-	o := &overlay{kind: ovHelp, title: "lv — key bindings", hint: "Esc close  j/k scroll"}
+	o := &overlay{kind: ovHelp, title: "lv — key bindings", hint: "Space/b page  j/k line  g/G ends  Esc close"}
 
 	groups := map[string][]config.Bind{}
 	for _, b := range append(append([]config.Bind{}, a.cfg.Binds()...), a.cfg.VisualBinds()...) {

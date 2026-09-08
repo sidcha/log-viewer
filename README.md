@@ -311,9 +311,14 @@ notation where anything in angle brackets is a single key (`<C-w>s`). A longer
 bare run is rejected rather than silently bound as a sequence, so a misspelled
 key name tells you about itself.
 
-`C-` is Control and `M-` is Alt — or Escape first, which is what most terminals
-send anyway. No default binding uses Alt: a key you have to deduce is a key
+`C-` is Control, `M-` is Alt and `S-` is Shift — so `S-PgUp` and `C-Up` bind as
+you would expect. No default binding uses Alt: a key you have to deduce is a key
 nobody presses. lv's own commands sit under `z`, leaving the vi keys alone.
+
+`S-Space` is the one thing that cannot be bound. Shift does not change the space
+character, so the modifier is the only thing that could distinguish the two, and
+the terminal library drops it from rune events before lv sees them. `b`, `C-b`
+and `PgUp` page back instead, in the log and in any panel.
 
 Because `#` starts a comment when it begins a word, a `#` or `{` inside a key
 specification or a pattern must be quoted: `bind '#' search-word-back`.

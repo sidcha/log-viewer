@@ -195,3 +195,71 @@ func TestLongBareSpecIsRejected(t *testing.T) {
 		t.Errorf("ParseSequence(bracketed) = %d keys, %v", len(got), err)
 	}
 }
+
+// TestShiftSpaceCannotBeDistinguished records a limitation of the terminal
+// library rather than of lv.
+//
+// Shift changes nothing about the space character, so the modifier is the only
+// thing that could tell Shift-Space from Space -- and tcell's NewEventKey
+// drops a lone ModShift from every rune event before lv sees it. Until that
+// changes, Shift-Space is unbindable, which is why b, C-b and PgUp carry
+// paging back instead.
+func TestShiftSpaceCannotBeDistinguished(t *testing.T) {
+	plain, err := ParseKey("Space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shifted, err := ParseKey("S-Space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain == shifted {
+		t.Fatal("Space and S-Space should parse to different keys")
+	}
+	if got := shifted.String(); got != "S-Space" {
+		t.Errorf("S-Space renders as %q", got)
+	}
+
+	// The event, however, arrives indistinguishable from a plain space.
+	got := FromEvent(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModShift))
+	if got == shifted {
+		t.Log("tcell now preserves Shift on space; S-Space could be bound by default")
+		return
+	}
+	if got != plain {
+		t.Errorf("Shift-Space arrived as %+v, want it to look like a plain Space", got)
+	}
+}
+
+// TestShiftedNamedKeysBind: shift on an arrow or a page key is not encoded in
+// the key code, so it has to survive normalisation or S-PgUp cannot be bound.
+func TestShiftedNamedKeysBind(t *testing.T) {
+	for _, spec := range []string{"S-PgUp", "S-Up", "S-Home"} {
+		want, err := ParseKey(spec)
+		if err != nil {
+			t.Fatalf("ParseKey(%q): %v", spec, err)
+		}
+		got := FromEvent(tcell.NewEventKey(want.Key, 0, tcell.ModShift))
+		if got != want {
+			t.Errorf("%s: event %+v does not match binding %+v", spec, got, want)
+		}
+		// And the unshifted key stays distinct.
+		plain, _ := ParseKey(spec[2:])
+		if plain == want {
+			t.Errorf("%s and %s parse the same", spec, spec[2:])
+		}
+	}
+}
+
+// TestCtrlLetterStillNormalises guards the other half: Ctrl is already in the
+// key code there, so keeping the modifier would stop <C-d> matching.
+func TestCtrlLetterStillNormalises(t *testing.T) {
+	want, err := ParseKey("C-d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := FromEvent(tcell.NewEventKey(tcell.KeyCtrlD, rune(4), tcell.ModCtrl))
+	if got != want {
+		t.Errorf("C-d: event %+v does not match binding %+v", got, want)
+	}
+}

@@ -27,8 +27,13 @@ func FromEvent(ev *tcell.EventKey) Key {
 		// Shift is already expressed in the rune itself.
 		return Key{Key: k, Ch: ch, Mod: mod &^ tcell.ModShift}
 	}
-	// Control is already expressed in the key code.
-	return Key{Key: k, Mod: mod &^ (tcell.ModShift | tcell.ModCtrl)}
+	if k >= tcell.KeyCtrlA && k <= tcell.KeyCtrlZ {
+		// Control is already expressed in the key code across this range.
+		mod &^= tcell.ModCtrl
+	}
+	// Shift and Control on a named key -- an arrow, a page key -- are not
+	// encoded anywhere else, so they are kept: S-PgUp is not PgUp.
+	return Key{Key: k, Mod: mod}
 }
 
 var namedKeys = map[string]tcell.Key{
@@ -99,6 +104,9 @@ func ParseKey(spec string) (Key, error) {
 		case len(rest) > 2 && (rest[:2] == "M-" || rest[:2] == "m-"):
 			mod |= tcell.ModAlt
 			rest = rest[2:]
+		case len(rest) > 2 && (rest[:2] == "S-" || rest[:2] == "s-"):
+			mod |= tcell.ModShift
+			rest = rest[2:]
 		default:
 			goto done
 		}
@@ -160,6 +168,9 @@ func (k Key) String() string {
 	var b strings.Builder
 	if k.Mod&tcell.ModAlt != 0 {
 		b.WriteString("M-")
+	}
+	if k.Mod&tcell.ModShift != 0 {
+		b.WriteString("S-")
 	}
 
 	switch {
