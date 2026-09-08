@@ -141,10 +141,15 @@ no `never` rule — that is, `grep -e … -e … | grep -v …`.
 
 **`only` rules are or-ed.** Press `&` as many times as you like: each pattern
 widens what is shown rather than replacing the last, so `&ERROR` then `&WARN`
-gives you both. While you type the second one the prompt counts what it would
-*add* — `+2 more of 6 scanned` — because a widening rule cannot take anything
-off the screen. `never` rules are and-ed, and always narrow. `=` spells out how
+gives you both. `never` rules are and-ed, and always narrow. `=` spells out how
 the current set combines.
+
+While you are typing a further `only` pattern, the ones already in force are
+lifted and the whole log comes back, so you can see the lines the new pattern
+would bring in — they are, by definition, the ones currently hidden. What is
+dimmed is judged by the rules *as they would be*, so a line kept by an existing
+rule stays lit whether or not the pattern being typed matches it. Escape puts
+the filter back; Enter puts it back with the new pattern or-ed in.
 
 A search highlight is a separate, transient thing: `/` lights up every match,
 `C-l` or `:noh` drops it, and neither touches the rules you built. The reverse

@@ -55,11 +55,38 @@ func TestMultipleOnlyRulesAreOred(t *testing.T) {
 	}
 }
 
-// TestPreviewOfASecondOnlyDoesNotLookEmpty is the reported problem: the
-// preview evaluated the new pattern alone against the already-filtered view,
-// so it reported nothing matching and dimmed the screen, which reads as "this
-// pattern replaces the first and matches nothing".
-func TestPreviewOfASecondOnlyDoesNotLookEmpty(t *testing.T) {
+// TestTypingASecondOnlyLiftsTheFirst is the point of the whole arrangement:
+// the lines a further only pattern would bring back are exactly the ones the
+// existing rules are hiding, so they have to be on screen to be previewed
+// against.
+func TestTypingASecondOnlyLiftsTheFirst(t *testing.T) {
+	a, _ := newTestApp(t, mixed)
+
+	a.addRule(filter.Only, "alpha", filter.Color{})
+	waitFiltered(t, a)
+	if got := a.viewLen(); got != 2 {
+		t.Fatalf("filtered view has %d lines, want 2", got)
+	}
+
+	a.key(tcell.NewEventKey(tcell.KeyRune, '&', tcell.ModNone))
+	if !a.previewBase {
+		t.Fatal("the only rules were not lifted while typing another")
+	}
+	if got := a.viewLen(); got != 6 {
+		t.Fatalf("while typing, the view shows %d lines, want the whole log (6)", got)
+	}
+
+	// And the candidate can now be seen matching a line the filter was hiding.
+	typeInto(a, "beta")
+	if a.prev.m == nil || !a.prev.m.Match([]byte("beta two")) {
+		t.Error("the candidate does not match a line that was hidden")
+	}
+}
+
+// TestPreviewDimsByTheProspectiveSet: what is dimmed has to be what would
+// actually go, which means judging each line by the rules as they would be,
+// not by the pattern being typed on its own.
+func TestPreviewDimsByTheProspectiveSet(t *testing.T) {
 	a, scr := newTestApp(t, mixed)
 
 	a.addRule(filter.Only, "alpha", filter.Color{})
@@ -69,21 +96,58 @@ func TestPreviewOfASecondOnlyDoesNotLookEmpty(t *testing.T) {
 	typeInto(a, "beta")
 	a.draw()
 
-	if !a.prev.widening {
-		t.Fatal("the preview did not notice that this only rule widens")
-	}
-	if a.prev.matched == 0 {
-		t.Error("the preview counted no lines to add, but beta lines exist")
-	}
-	if s := a.prev.summary(); !strings.Contains(s, "+") {
-		t.Errorf("summary = %q, want it to show an addition", s)
+	// mixed is: alpha one / beta two / gamma three / alpha four / beta five /
+	// delta six. alpha and beta lines survive; gamma and delta do not.
+	for row, want := range map[int]bool{0: false, 1: false, 2: true, 3: false, 4: false, 5: true} {
+		if got := isDropped(a, scr, row); got != want {
+			t.Errorf("row %d (%q) dimmed=%v, want %v", row, rowText(scr, row), got, want)
+		}
 	}
 
-	// Nothing on screen may be dimmed: or-ing never removes a visible line.
-	for row := 0; row < 2; row++ {
-		if isDropped(a, scr, row) {
-			t.Fatalf("row %d is dimmed while previewing a widening rule", row)
-		}
+	if s := a.prev.summary(); !strings.Contains(s, "4 of 6 shown") {
+		t.Errorf("summary = %q, want it to count the resulting view", s)
+	}
+}
+
+// TestCancellingRestoresTheFilter: lifting the rules is for the duration of
+// the prompt only.
+func TestCancellingRestoresTheFilter(t *testing.T) {
+	a, _ := newTestApp(t, mixed)
+	a.addRule(filter.Only, "alpha", filter.Color{})
+	waitFiltered(t, a)
+
+	a.key(tcell.NewEventKey(tcell.KeyRune, '&', tcell.ModNone))
+	typeInto(a, "beta")
+	a.key(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+
+	if a.previewBase {
+		t.Fatal("the only rules were left lifted after cancelling")
+	}
+	waitFiltered(t, a)
+	if got := a.viewLen(); got != 2 {
+		t.Fatalf("after cancelling the view shows %d lines, want the filtered 2", got)
+	}
+	if a.rules.Len() != 1 {
+		t.Errorf("cancelling added a rule: %d rules", a.rules.Len())
+	}
+}
+
+// TestCommittingReenablesEveryOnly: all of them come back, or-ed with the new.
+func TestCommittingReenablesEveryOnly(t *testing.T) {
+	a, _ := newTestApp(t, mixed)
+	a.addRule(filter.Only, "alpha", filter.Color{})
+	waitFiltered(t, a)
+
+	a.key(tcell.NewEventKey(tcell.KeyRune, '&', tcell.ModNone))
+	typeInto(a, "beta")
+	press(a, tcell.KeyEnter)
+
+	if a.previewBase {
+		t.Fatal("the only rules were left lifted after committing")
+	}
+	waitFiltered(t, a)
+	if got := len(visible(t, a)); got != 4 {
+		t.Fatalf("after committing the view shows %d lines, want 4", got)
 	}
 }
 
@@ -95,8 +159,8 @@ func TestPreviewOfAFirstOnlyStillNarrows(t *testing.T) {
 	typeInto(a, "alpha")
 	a.draw()
 
-	if a.prev.widening {
-		t.Fatal("the first only rule should narrow, not widen")
+	if a.previewBase {
+		t.Fatal("there is no only rule to lift, so the view should be unchanged")
 	}
 	if !isDropped(a, scr, 1) { // "beta two"
 		t.Error("a line the first only rule would remove is not dimmed")
@@ -119,8 +183,8 @@ func TestPreviewOfANeverStillNarrowsAlongsideOnlys(t *testing.T) {
 	typeInto(a, "two")
 	a.draw()
 
-	if a.prev.widening {
-		t.Fatal("a never rule must not be treated as widening")
+	if a.previewBase {
+		t.Fatal("a never rule narrows, so the only rules must stay in force")
 	}
 	// "beta two" is row 1 of the filtered view.
 	if !isDropped(a, scr, 1) {

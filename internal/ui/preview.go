@@ -21,10 +21,10 @@ type preview struct {
 	style tcell.Style
 	err   error
 
-	// widening is set when the candidate is an `only` rule and the view is
-	// already restricted by one. Those are or-ed, so the new pattern can only
-	// bring lines back, never take any away.
-	widening bool
+	// set is the rule set that would be in force if the candidate were
+	// committed. The verdict comes from this rather than from the candidate
+	// alone, so what is dimmed is exactly what would go.
+	set *filter.Set
 
 	// counted over a bounded sample
 	matched int
@@ -35,15 +35,41 @@ type preview struct {
 // real thing rather than a placeholder.
 func (a *App) startPreview(act promptAction) {
 	a.prev = &preview{
-		act:      act,
-		color:    filter.NextColor(a.rules.Colors()),
-		widening: act == actOnly && a.rules.Count(filter.Only) > 0,
+		act:   act,
+		color: filter.NextColor(a.rules.Colors()),
 	}
 	a.prev.style = a.styleFor(a.prev.color)
+
+	// While a further `only` pattern is being typed, lift the ones already in
+	// force. They are or-ed, so the lines the new pattern would bring back are
+	// exactly the ones currently hidden -- and a preview that cannot show them
+	// is showing the wrong log. What survives is still marked by the verdict
+	// below, so nothing is lost by widening the view to type against.
+	if act == actOnly && a.rules.Count(filter.Only) > 0 {
+		a.suspendOnly(true)
+	}
 	a.updatePreview("")
 }
 
-func (a *App) endPreview() { a.prev = nil }
+func (a *App) endPreview() {
+	a.suspendOnly(false)
+	a.prev = nil
+}
+
+// suspendOnly switches between the filtered view and the whole log, keeping
+// the cursor on the same source line across the change.
+func (a *App) suspendOnly(on bool) {
+	if a.previewBase == on {
+		return
+	}
+	src := a.anchorSource()
+	a.previewBase = on
+	if on {
+		a.setCursor(src)
+		return
+	}
+	a.seekSource(src)
+}
 
 // updatePreview recompiles the candidate pattern and recounts what it would
 // affect. It runs on every keystroke, so it stays bounded: compiling a pattern
@@ -66,18 +92,18 @@ func (a *App) updatePreview(pattern string) {
 	}
 	p.m = m
 
+	// The rule set as it would be once committed.
+	if action, ok := p.act.rule(); ok && action != filter.Highlight {
+		p.set = a.rules.Add(filter.Rule{Action: action, M: m, Enabled: true, Color: p.color})
+	}
+
 	limit := a.cfg.Int("preview-sample")
 	if limit <= 0 {
 		limit = 2000
 	}
 
-	if p.widening {
-		a.countAdditions(p, m, limit)
-		return
-	}
-
 	_ = a.activeView().Iterate(a.top, func(_ int64, ln view.Line) bool {
-		if m.Match(ln.Text) {
+		if p.keeps(ln.Text) {
 			p.matched++
 		}
 		p.sampled++
@@ -85,31 +111,13 @@ func (a *App) updatePreview(pattern string) {
 	})
 }
 
-// countAdditions counts lines the candidate would bring back into a view that
-// is already restricted.
-//
-// Sampling what is on screen would be useless here: those lines are shown
-// already, so the answer would always be about what is visible rather than
-// what is missing. The count has to come from the unfiltered log.
-func (a *App) countAdditions(p *preview, m filter.Matcher, limit int) {
-	from := a.topSourceLine()
-	_ = a.base.Iterate(from, func(_ int64, ln view.Line) bool {
-		if m.Match(ln.Text) && !a.rules.Pass(ln.Text) {
-			p.matched++
-		}
-		p.sampled++
-		return p.sampled < limit
-	})
-}
-
-// topSourceLine is the source line number at the top of the screen, 0-based.
-func (a *App) topSourceLine() int64 {
-	ln, err := a.activeView().At(a.top, a.walkbuf[:0])
-	if err != nil {
-		return 0
+// keeps reports whether a line would still be shown once the candidate is
+// committed. For a highlight, which hides nothing, that is just a match.
+func (p *preview) keeps(line []byte) bool {
+	if p.set != nil {
+		return p.set.Pass(line)
 	}
-	a.walkbuf = ln.Text
-	return ln.Num - 1
+	return p.m != nil && p.m.Match(line)
 }
 
 // previewVerdict reports how a line should be drawn under the active preview:
@@ -119,13 +127,11 @@ func (p *preview) verdict(line []byte) (dropped, hit bool) {
 		return false, false
 	}
 	hit = p.m.Match(line)
-	switch {
-	case p.widening:
-		// Or-ed with the rules already in force, so nothing on screen goes.
-	case p.act == actOnly:
-		dropped = !hit
-	case p.act == actNever:
-		dropped = hit
+	if p.set != nil {
+		// Dim by the prospective set rather than by the candidate alone: a
+		// line kept by a rule already in force stays, whether or not the
+		// pattern being typed matches it.
+		dropped = !p.set.Pass(line)
 	}
 	return dropped, hit
 }
@@ -141,18 +147,9 @@ func (p *preview) summary() string {
 		return ""
 	}
 
-	if p.widening {
-		return "  +" + commas(int64(p.matched)) + " more of " + commas(int64(p.sampled)) + " scanned"
-	}
-
-	var verb string
-	switch p.act {
-	case actOnly:
+	verb := "matched"
+	if p.set != nil {
 		verb = "shown"
-	case actNever:
-		verb = "hidden"
-	default:
-		verb = "matched"
 	}
 	return "  " + commas(int64(p.matched)) + " of " + commas(int64(p.sampled)) + " " + verb
 }

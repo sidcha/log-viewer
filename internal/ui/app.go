@@ -49,17 +49,20 @@ type App struct {
 	eng *highlight.Engine
 	lay *layout
 
-	top      int64
-	cur      int64 // cursor line, in view coordinates
-	curCol   int   // cursor byte offset within that line
-	wantCol  int   // column to return to after moving between lines
-	sel      selection
-	hoff     int
-	follow   bool
-	wrap     bool
-	lineNums bool
-	bypass   bool
-	statusOn string
+	top     int64
+	cur     int64 // cursor line, in view coordinates
+	curCol  int   // cursor byte offset within that line
+	wantCol int   // column to return to after moving between lines
+	sel     selection
+	hoff    int
+	// previewBase lifts the only rules while a further one is being typed, so
+	// the lines it would bring back can be seen.
+	previewBase bool
+	follow      bool
+	wrap        bool
+	lineNums    bool
+	bypass      bool
+	statusOn    string
 
 	search  searchState
 	prompt  *prompt
@@ -272,13 +275,13 @@ func (a *App) tickDirty() bool {
 // activeView is the view the user is looking at: the filtered one unless there
 // is no filter or the bypass toggle is held.
 func (a *App) activeView() view.View {
-	if a.filt != nil && !a.bypass {
+	if a.filtered() {
 		return a.filt
 	}
 	return a.base
 }
 
-func (a *App) filtered() bool { return a.filt != nil && !a.bypass }
+func (a *App) filtered() bool { return a.filt != nil && !a.bypass && !a.previewBase }
 
 // ------------------------------------------------------------ event handling
 
