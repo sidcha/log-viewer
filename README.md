@@ -88,7 +88,7 @@ be rebound independently.
 | `&` `!` `m` | add an only / never / highlight rule |
 | `=` | the rule list: edit, enable, disable, delete |
 | `\` | disable every rule for a moment |
-| `C-p` `C-x` `M-*` | remove the last rule, every rule, every highlight rule |
+| `C-p` `C-x` `zm` | remove the last rule, every rule, every highlight rule |
 
 ### View and other
 
@@ -310,6 +310,10 @@ A binding is one key (`C-a`, `PgUp`), a short bare sequence (`gg`, `zz`), or vim
 notation where anything in angle brackets is a single key (`<C-w>s`). A longer
 bare run is rejected rather than silently bound as a sequence, so a misspelled
 key name tells you about itself.
+
+`C-` is Control and `M-` is Alt — or Escape first, which is what most terminals
+send anyway. No default binding uses Alt: a key you have to deduce is a key
+nobody presses. lv's own commands sit under `z`, leaving the vi keys alone.
 
 Because `#` starts a comment when it begins a word, a `#` or `{` inside a key
 specification or a pattern must be quoted: `bind '#' search-word-back`.

@@ -349,6 +349,10 @@ func (a *App) showHelp() {
 
 	o.rows = append(o.rows,
 		ovRow{text: "", item: -1},
+		ovRow{text: "READING THE KEYS", style: "overlay.title", item: -1},
+		ovRow{text: "  Two letters together are a sequence: gg is g then g.", style: "overlay.dim", item: -1},
+		ovRow{text: "  <C-d> is Control and d.  <M-d> is Alt and d, or Escape then d.", style: "overlay.dim", item: -1},
+		ovRow{text: "", item: -1},
 		ovRow{text: "COUNTS AND SEQUENCES", style: "overlay.title", item: -1},
 		ovRow{text: "  Type a number before a motion to repeat it: 5j, 12k, 42G.", style: "overlay.dim", item: -1},
 		ovRow{text: "  : opens the command line; Tab completes command names.", style: "overlay.dim", item: -1},
