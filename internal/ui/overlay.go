@@ -405,15 +405,34 @@ func (a *App) showRules() {
 		})
 	}
 
-	if a.filt != nil {
-		kept, scanned := a.filt.Len(), a.filt.SourceLinesScanned()
+	// Spell out how they combine. Several only rules are or-ed, which is not
+	// something anyone should have to work out by experiment.
+	if onlys, nevers := a.rules.Count(filter.Only), a.rules.Count(filter.Never); onlys+nevers > 0 {
+		var how string
+		switch {
+		case onlys > 1 && nevers > 0:
+			how = fmt.Sprintf("a line is shown if it matches any of the %d only rules and none of the %d never rules", onlys, nevers)
+		case onlys > 1:
+			how = fmt.Sprintf("a line is shown if it matches any of the %d only rules", onlys)
+		case onlys == 1 && nevers > 0:
+			how = "a line is shown if it matches the only rule and none of the never rules"
+		case onlys == 1:
+			how = "a line is shown if it matches the only rule"
+		default:
+			how = "every line is shown except those matching a never rule"
+		}
 		o.rows = append(o.rows,
 			ovRow{text: "", item: -1},
-			ovRow{
-				text:  fmt.Sprintf("  %s of %s lines shown", commas(kept), commas(scanned)),
-				style: "overlay.dim",
-				item:  -1,
-			})
+			ovRow{text: "  " + how, style: "overlay.dim", item: -1})
+	}
+
+	if a.filt != nil {
+		kept, scanned := a.filt.Len(), a.filt.SourceLinesScanned()
+		o.rows = append(o.rows, ovRow{
+			text:  fmt.Sprintf("  %s of %s lines shown", commas(kept), commas(scanned)),
+			style: "overlay.dim",
+			item:  -1,
+		})
 	}
 	a.ov = o
 }

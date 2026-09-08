@@ -137,7 +137,14 @@ Filtering and marking are the same thing with three actions:
 
 Rules form one flat list, evaluated in a single pass over the file. A line is
 shown when it matches at least one `only` rule (or there are none) and matches
-no `never` rule — that is, `grep -e … | grep -v …`.
+no `never` rule — that is, `grep -e … -e … | grep -v …`.
+
+**`only` rules are or-ed.** Press `&` as many times as you like: each pattern
+widens what is shown rather than replacing the last, so `&ERROR` then `&WARN`
+gives you both. While you type the second one the prompt counts what it would
+*add* — `+2 more of 6 scanned` — because a widening rule cannot take anything
+off the screen. `never` rules are and-ed, and always narrow. `=` spells out how
+the current set combines.
 
 A search highlight is a separate, transient thing: `/` lights up every match,
 `C-l` or `:noh` drops it, and neither touches the rules you built. The reverse
