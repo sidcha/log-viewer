@@ -49,24 +49,21 @@ type App struct {
 	eng *highlight.Engine
 	lay *layout
 
-	top     int64
-	cur     int64 // cursor line, in view coordinates
-	curCol  int   // cursor byte offset within that line
-	wantCol int   // column to return to after moving between lines
-	sel     selection
-	hoff    int
-	// previewBase lifts the only rules while a further one is being typed, so
-	// the lines it would bring back can be seen.
-	previewBase bool
-	follow      bool
-	wrap        bool
-	lineNums    bool
-	bypass      bool
-	statusOn    string
+	top      int64
+	cur      int64 // cursor line, in view coordinates
+	curCol   int   // cursor byte offset within that line
+	wantCol  int   // column to return to after moving between lines
+	sel      selection
+	hoff     int
+	follow   bool
+	wrap     bool
+	lineNums bool
+	bypass   bool
+	statusOn string
 
 	search  searchState
 	prompt  *prompt
-	prev    *preview
+	find    *finder
 	ov      *overlay
 	confirm *confirm
 	busy    *busyOp
@@ -156,7 +153,7 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 
 	set := a.rules
 	for _, p := range cfg.Presets() {
-		m, err := filter.Compile(p.Pattern, cfg.Case())
+		m, err := filter.Compile(p.Pattern, p.Mode, cfg.Case())
 		if err != nil {
 			a.errorf("rule %q: %v", p.Pattern, err)
 			continue
@@ -281,7 +278,7 @@ func (a *App) activeView() view.View {
 	return a.base
 }
 
-func (a *App) filtered() bool { return a.filt != nil && !a.bypass && !a.previewBase }
+func (a *App) filtered() bool { return a.filt != nil && !a.bypass }
 
 // ------------------------------------------------------------ event handling
 
@@ -304,6 +301,10 @@ func (a *App) handle(ev tcell.Event) {
 func (a *App) key(ev *tcell.EventKey) {
 	if a.confirm != nil {
 		a.confirmKey(ev)
+		return
+	}
+	if a.find != nil {
+		a.finderKey(ev)
 		return
 	}
 	if a.prompt != nil {

@@ -270,6 +270,39 @@ rule highlight 'OOM' color=#ff0000
 	}
 }
 
+func TestRuleDirectiveMatchMode(t *testing.T) {
+	c := New()
+	err := c.Parse("t", `
+rule only 'a.b'
+rule never 'ERR(OR)?' match=regex
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	presets := c.Presets()
+	if presets[0].Mode != filter.Literal {
+		t.Errorf("preset 0 mode = %v, want literal by default", presets[0].Mode)
+	}
+	if presets[1].Mode != filter.Regex {
+		t.Errorf("preset 1 mode = %v, want regex", presets[1].Mode)
+	}
+
+	// The mode survives a dump-and-reparse, or `lv config` would silently
+	// rewrite what a rule means.
+	c2 := New()
+	if err := c2.Parse("t", c.Dump()); err != nil {
+		t.Fatal(err)
+	}
+	if got := c2.Presets(); len(got) != 2 || got[1].Mode != filter.Regex {
+		t.Errorf("after a round trip through Dump: %+v", got)
+	}
+
+	if err := New().Parse("t", "rule only 'x' match=glob"); err == nil {
+		t.Error("an unknown match mode was accepted")
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

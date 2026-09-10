@@ -1,0 +1,729 @@
+package ui
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/filter"
+	"github.com/sidcha/log-viewer/internal/view"
+)
+
+// The finder is the window that opens for &, !, m and /.
+//
+// It replaced an inline preview that could only describe the lines already on
+// screen: a pattern matching something further down the file showed nothing at
+// all, and the only feedback available was a count crammed against the cursor.
+// Here the matches themselves are the feedback.
+//
+// The log above is left exactly as it is. Nothing is filtered, dimmed or moved
+// until a rule is committed, so the window can be opened, typed into and
+// abandoned without disturbing where you were reading.
+
+// finderKind is which of the four operations the window was opened for.
+type finderKind int
+
+const (
+	findOnly finderKind = iota
+	findNever
+	findHighlight
+	findSearch
+)
+
+func (k finderKind) String() string {
+	switch k {
+	case findOnly:
+		return "only"
+	case findNever:
+		return "never"
+	case findHighlight:
+		return "highlight"
+	default:
+		return "search"
+	}
+}
+
+// rule returns the rule action this window commits, for the three that make one.
+func (k finderKind) rule() (filter.Action, bool) {
+	switch k {
+	case findOnly:
+		return filter.Only, true
+	case findNever:
+		return filter.Never, true
+	case findHighlight:
+		return filter.Highlight, true
+	}
+	return filter.Only, false
+}
+
+// finderRow is one match.
+type finderRow struct {
+	num  int64 // source line number, 1-based
+	text []byte
+}
+
+type finder struct {
+	kind  finderKind
+	buf   []rune
+	cur   int
+	hist  *[]string
+	hidx  int
+	stash []rune
+
+	m   filter.Matcher
+	err error
+
+	rows []finderRow
+	sel  int
+	top  int
+	// height is how many result rows the window showed last time it was
+	// drawn, which is also how many matches are worth looking for.
+	height int
+
+	// gen rises on every edit; a scan that finishes under an old one is stale.
+	gen      int
+	scanning bool
+	atEnd    bool
+	from     int64 // where the next scan resumes
+	scanned  int64
+	cancel   context.CancelFunc
+
+	// mode is how the typed pattern is read. Searching is fuzzy, because you
+	// are reaching for a line you half remember; a rule is literal, because it
+	// is saved and should mean what it says. C-r switches either to PCRE.
+	mode filter.Mode
+
+	// editing is the rule this window is rewriting, or -1.
+	editing int
+
+	color filter.Color
+	style tcell.Style
+}
+
+// finderLookahead is how many matches past the visible rows are gathered, so
+// moving the selection down does not stall on a fresh scan.
+const finderLookahead = 20
+
+// defaultMode is how a pattern is read before C-r is pressed.
+func defaultMode(kind finderKind) filter.Mode {
+	if kind == findSearch {
+		return filter.Fuzzy
+	}
+	return filter.Literal
+}
+
+// openFinder starts one of the four operations.
+func (a *App) openFinder(kind finderKind, pattern string) {
+	a.closeFinder()
+	a.clearMsg()
+
+	f := &finder{
+		kind:    kind,
+		hist:    &a.histPattern,
+		hidx:    len(a.histPattern),
+		color:   filter.NextColor(a.rules.Colors()),
+		height:  1,
+		editing: -1,
+		mode:    defaultMode(kind),
+	}
+	f.style = a.styleFor(f.color)
+	if pattern != "" {
+		f.buf = []rune(pattern)
+		f.cur = len(f.buf)
+	}
+	a.find = f
+	a.restartFinder()
+}
+
+func (a *App) closeFinder() {
+	if a.find == nil {
+		return
+	}
+	if a.find.cancel != nil {
+		a.find.cancel()
+	}
+	a.find = nil
+	a.scr.HideCursor()
+}
+
+// restartFinder recompiles the pattern and starts the search again from the
+// reading position.
+func (a *App) restartFinder() {
+	f := a.find
+	if f == nil {
+		return
+	}
+	if f.cancel != nil {
+		f.cancel()
+		f.cancel = nil
+	}
+
+	f.gen++
+	f.rows, f.sel, f.top = f.rows[:0], 0, 0
+	f.scanning, f.atEnd, f.scanned = false, false, 0
+	f.m, f.err = nil, nil
+	f.from = a.finderStart(f)
+
+	pattern := strings.TrimSpace(string(f.buf))
+	if pattern == "" {
+		return
+	}
+	m, err := filter.Compile(pattern, f.mode, a.cfg.Case())
+	if err != nil {
+		f.err = err
+		return
+	}
+	f.m = m
+	a.scanFinder()
+}
+
+// finderStart is the line the search begins at: where you are reading.
+func (a *App) finderStart(f *finder) int64 {
+	if f.kind == findOnly {
+		// An only rule brings lines back, so it searches past the filter --
+		// but by source line, since that search runs over the whole log.
+		return a.anchorSource()
+	}
+	return a.cursorLine()
+}
+
+// finderSource is what the search walks.
+//
+// Adding an only rule is a question about lines that are not currently shown,
+// so it has to see the whole log. The other three are questions about what is
+// in front of you, and searching lines you have already filtered away would
+// only produce results you cannot act on.
+func (a *App) finderSource(f *finder) view.View {
+	if f.kind == findOnly {
+		return a.base
+	}
+	return a.activeView()
+}
+
+// finderSkip drops lines the search should not offer.
+//
+// When widening with an only rule the never rules still apply: those lines
+// were banished on purpose and should not come back just because a new
+// pattern happens to match them.
+func (a *App) finderSkip(f *finder) func([]byte) bool {
+	if f.kind != findOnly || a.rules.Count(filter.Never) == 0 {
+		return nil
+	}
+	nevers := a.rules.ClearAction(filter.Only)
+	return func(line []byte) bool { return !nevers.Pass(line) }
+}
+
+// wanted is how many matches are worth having gathered by now.
+func (f *finder) wanted() int {
+	return f.top + f.height + finderLookahead
+}
+
+// scanFinder walks forward for more matches, stopping as soon as there are
+// enough to fill the window.
+//
+// The scan is bounded by need rather than by the size of the file: with
+// matches nearby it stops after a few hundred kilobytes. A pattern that
+// matches nothing does run to the end, which is why it runs in the background
+// and Escape cancels it.
+func (a *App) scanFinder() {
+	f := a.find
+	if f == nil || f.m == nil || f.scanning || f.atEnd {
+		return
+	}
+	want := f.wanted()
+	if len(f.rows) >= want {
+		return
+	}
+
+	f.scanning = true
+	gen := f.gen
+	from := f.from
+	have := len(f.rows)
+	m := f.m
+	skip := a.finderSkip(f)
+	src := a.finderSource(f)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	f.cancel = cancel
+
+	go func() {
+		var (
+			found   []finderRow
+			next    = from
+			scanned int64
+			full    bool
+		)
+		err := src.Iterate(from, func(i int64, ln view.Line) bool {
+			if ctx.Err() != nil {
+				full = true // not the end, just abandoned
+				return false
+			}
+			next = i + 1
+			scanned++
+			if skip != nil && skip(ln.Text) {
+				return true
+			}
+			if m.Match(ln.Text) {
+				found = append(found, finderRow{
+					num:  ln.Num,
+					text: append([]byte(nil), ln.Text...),
+				})
+				if have+len(found) >= want {
+					full = true
+					return false
+				}
+			}
+			return true
+		})
+
+		a.postFn(func() {
+			cur := a.find
+			if cur != f || gen != f.gen {
+				return // the pattern moved on while this was running
+			}
+			f.scanning = false
+			f.rows = append(f.rows, found...)
+			f.from = next
+			f.scanned += scanned
+			if err != nil {
+				f.err = err
+			}
+			f.atEnd = !full && err == nil
+			// Scrolling may have raised the target while this was in flight.
+			a.scanFinder()
+		})
+		a.Wake()
+	}()
+}
+
+// selected is the highlighted row, or nil.
+func (f *finder) selected() *finderRow {
+	if f.sel < 0 || f.sel >= len(f.rows) {
+		return nil
+	}
+	return &f.rows[f.sel]
+}
+
+// moveSel moves the selection, fetching more matches when it runs off the end.
+func (a *App) moveSel(delta int) {
+	f := a.find
+	f.sel += delta
+	if f.sel < 0 {
+		f.sel = 0
+	}
+	if f.sel >= len(f.rows) {
+		f.sel = len(f.rows) - 1
+		if f.sel < 0 {
+			f.sel = 0
+		}
+	}
+	if f.sel < f.top {
+		f.top = f.sel
+	}
+	if f.height > 0 && f.sel >= f.top+f.height {
+		f.top = f.sel - f.height + 1
+	}
+	a.scanFinder()
+}
+
+// ---------------------------------------------------------------------- keys
+
+func (a *App) finderKey(ev *tcell.EventKey) {
+	f := a.find
+	edited := false
+
+	switch ev.Key() {
+	case tcell.KeyEscape, tcell.KeyCtrlG:
+		a.closeFinder()
+		return
+
+	case tcell.KeyEnter:
+		a.commitFinder()
+		return
+
+	case tcell.KeyTab:
+		// Look at a match without giving up the window.
+		if r := f.selected(); r != nil {
+			a.gotoSourceLine(r.num)
+		}
+		return
+
+	case tcell.KeyUp:
+		a.moveSel(-1)
+		return
+	case tcell.KeyDown:
+		a.moveSel(1)
+		return
+
+	// The arrows move through the matches, so recalling an earlier pattern
+	// keeps the control keys it has at the bottom-row prompt.
+	case tcell.KeyCtrlP:
+		f.history(-1)
+		edited = true
+	case tcell.KeyCtrlN:
+		f.history(1)
+		edited = true
+
+	case tcell.KeyPgUp:
+		a.moveSel(-f.height)
+		return
+	case tcell.KeyPgDn:
+		a.moveSel(f.height)
+		return
+
+	case tcell.KeyLeft:
+		if f.cur > 0 {
+			f.cur--
+		}
+	case tcell.KeyRight:
+		if f.cur < len(f.buf) {
+			f.cur++
+		}
+	case tcell.KeyHome, tcell.KeyCtrlA:
+		f.cur = 0
+	case tcell.KeyEnd, tcell.KeyCtrlE:
+		f.cur = len(f.buf)
+
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if f.cur > 0 {
+			f.buf = append(f.buf[:f.cur-1], f.buf[f.cur:]...)
+			f.cur--
+			edited = true
+		}
+	case tcell.KeyDelete, tcell.KeyCtrlD:
+		if f.cur < len(f.buf) {
+			f.buf = append(f.buf[:f.cur], f.buf[f.cur+1:]...)
+			edited = true
+		}
+	case tcell.KeyCtrlU:
+		f.buf, f.cur = f.buf[:0], 0
+		edited = true
+	case tcell.KeyCtrlK:
+		f.buf = f.buf[:f.cur]
+		edited = true
+	case tcell.KeyCtrlW:
+		f.deleteWord()
+		edited = true
+
+	case tcell.KeyCtrlR:
+		// Switch between reading the pattern plainly and as PCRE. A dedicated
+		// key, so every printable character stays typable -- * and ? are part
+		// of the syntax being toggled into.
+		if f.mode == filter.Regex {
+			f.mode = defaultMode(f.kind)
+		} else {
+			f.mode = filter.Regex
+		}
+		edited = true
+
+	case tcell.KeyRune:
+		f.buf = append(f.buf, 0)
+		copy(f.buf[f.cur+1:], f.buf[f.cur:])
+		f.buf[f.cur] = ev.Rune()
+		f.cur++
+		edited = true
+	}
+
+	if edited {
+		a.restartFinder()
+	}
+}
+
+func (f *finder) deleteWord() {
+	i := f.cur
+	for i > 0 && f.buf[i-1] == ' ' {
+		i--
+	}
+	for i > 0 && f.buf[i-1] != ' ' {
+		i--
+	}
+	f.buf = append(f.buf[:i], f.buf[f.cur:]...)
+	f.cur = i
+}
+
+// history walks the patterns typed earlier, keeping the live buffer aside so
+// coming back down returns what was half written.
+func (f *finder) history(delta int) {
+	if f.hist == nil || len(*f.hist) == 0 {
+		return
+	}
+	h := *f.hist
+	if f.hidx == len(h) && delta < 0 {
+		f.stash = append(f.stash[:0], f.buf...)
+	}
+	n := f.hidx + delta
+	if n < 0 {
+		n = 0
+	}
+	if n > len(h) {
+		n = len(h)
+	}
+	f.hidx = n
+	if n == len(h) {
+		f.buf = append(f.buf[:0], f.stash...)
+	} else {
+		f.buf = append(f.buf[:0], []rune(h[n])...)
+	}
+	f.cur = len(f.buf)
+}
+
+// commitFinder applies what the window was opened for.
+func (a *App) commitFinder() {
+	f := a.find
+	pattern := strings.TrimSpace(string(f.buf))
+	if pattern == "" || f.m == nil {
+		return
+	}
+	if f.hist != nil {
+		*f.hist = appendHistory(*f.hist, pattern)
+	}
+
+	kind, color, mode, editing := f.kind, f.color, f.mode, f.editing
+	row := f.selected()
+	var num int64
+	if row != nil {
+		num = row.num
+	}
+	a.closeFinder()
+
+	if action, ok := kind.rule(); ok {
+		if editing >= 0 {
+			a.replaceRuleMode(editing, pattern, mode)
+			return
+		}
+		a.addRuleMode(action, pattern, mode, color)
+		return
+	}
+
+	// A search: make it the pattern n and N step through, and go to the match
+	// that was highlighted.
+	a.doSearchAt(pattern, mode, num)
+}
+
+// ------------------------------------------------------------------ drawing
+
+// finderHeight is how many rows the window takes, including its borders.
+func (a *App) finderHeight(screen int) int {
+	h := screen / 2
+	if h < 6 {
+		h = 6
+	}
+	if h > screen-2 {
+		h = screen - 2
+	}
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
+// drawFinder paints the window across the bottom of the screen.
+func (a *App) drawFinder(top, w, h int) {
+	f := a.find
+	st := a.cfg.Style("overlay")
+	dim := a.cfg.Style("overlay.dim")
+
+	bottom := top + h - 1
+	drawBox(a.scr, 0, top, w-1, bottom, st)
+
+	title := " " + f.kind.String() + " "
+	if f.mode == filter.Regex {
+		title = " " + f.kind.String() + " · PCRE "
+	}
+	a.putStr(2, top, title, a.cfg.Style("overlay.title"))
+
+	if s := a.finderStatus(); s != "" {
+		if x := w - 2 - len([]rune(s)) - 1; x > 2+len([]rune(title)) {
+			a.putStr(x, top, " "+s+" ", dim)
+		}
+	}
+	if s := a.rulesSummary(); s != "" {
+		if x := w - 2 - len([]rune(s)) - 1; x > 2 {
+			a.putStr(x, bottom, " "+s+" ", dim)
+		}
+	}
+
+	// The input line.
+	promptStyle := a.cfg.Style("prompt")
+	if f.err != nil {
+		promptStyle = a.cfg.Style("status.error")
+	}
+	inputRow := top + 1
+	text := "> " + string(f.buf)
+	a.putStr(1, inputRow, text+strings.Repeat(" ", maxInt(0, w-2-len([]rune(text)))), promptStyle)
+	if f.err != nil {
+		if msg := " ✗ " + f.err.Error(); len([]rune(text))+len([]rune(msg)) < w-2 {
+			a.putStr(1+len([]rune(text)), inputRow, msg, promptStyle)
+		}
+	}
+
+	f.height = maxInt(1, bottom-inputRow-1)
+	a.drawFinderRows(inputRow+1, w, f.height, st, dim)
+
+	a.scr.ShowCursor(1+2+f.cur, inputRow)
+}
+
+func (a *App) drawFinderRows(top, w, rows int, st, dim tcell.Style) {
+	f := a.find
+	gutter := len(fmt.Sprint(a.idx.Lines())) + 2
+
+	for i := 0; i < rows; i++ {
+		y := top + i
+		idx := f.top + i
+
+		for x := 1; x < w-1; x++ {
+			a.scr.SetContent(x, y, ' ', nil, st)
+		}
+		if idx >= len(f.rows) {
+			if idx == len(f.rows) && f.m != nil && !f.scanning {
+				a.putStr(2, y, a.finderEmptyNote(), dim)
+			}
+			continue
+		}
+
+		row := f.rows[idx]
+		rowStyle := st
+		if f.kind == findNever {
+			// These are the lines the rule would banish; show them as struck
+			// out rather than merely listed.
+			rowStyle = rowStyle.StrikeThrough(true).Dim(true)
+		}
+		if idx == f.sel {
+			rowStyle = rowStyle.Reverse(true)
+		}
+
+		num := fmt.Sprintf("%*d ", gutter-1, row.num)
+		a.putStr(1, y, num, dim)
+		a.putFinderText(1+len(num), y, w-2-len(num), row, rowStyle)
+	}
+}
+
+// putFinderText draws one matched line, marking where the pattern hit.
+func (a *App) putFinderText(x, y, width int, row finderRow, base tcell.Style) {
+	f := a.find
+	a.lay.build(row.text, width)
+
+	n := a.lay.cols()
+	if cap(a.styles) < n {
+		a.styles = make([]tcell.Style, n, n*2+16)
+	}
+	a.styles = a.styles[:n]
+	for i := range a.styles {
+		a.styles[i] = base
+	}
+
+	if f.m != nil {
+		hit := f.style
+		if base != (tcell.Style{}) && f.kind == findNever {
+			hit = hit.StrikeThrough(true)
+		}
+		a.locs = f.m.Find(row.text[:minInt(len(row.text), a.lay.used)], a.locs[:0], 64)
+		for _, l := range a.locs {
+			cs, ce := a.lay.cellRange(l[0], l[1])
+			for k := cs; k < ce && k < n; k++ {
+				a.styles[k] = hit
+			}
+		}
+	}
+
+	for c := 0; c < n && c < width; c++ {
+		r := a.lay.cells[c]
+		if r == 0 {
+			r = ' '
+		}
+		a.scr.SetContent(x+c, y, r, nil, a.styles[c])
+	}
+}
+
+// finderStatus is the counter shown in the window's own frame, rather than
+// against the cursor where it was in the way.
+func (a *App) finderStatus() string {
+	f := a.find
+	switch {
+	case f.m == nil:
+		return ""
+	case f.scanning && len(f.rows) == 0:
+		return fmt.Sprintf("searching %s lines…", commas(f.scanned))
+	case f.scanning:
+		return fmt.Sprintf("%s so far…", commas(int64(len(f.rows))))
+	case f.atEnd:
+		return fmt.Sprintf("%s found", commas(int64(len(f.rows))))
+	default:
+		return fmt.Sprintf("%s shown", commas(int64(len(f.rows))))
+	}
+}
+
+func (a *App) finderEmptyNote() string {
+	f := a.find
+	if len(f.rows) == 0 {
+		if f.atEnd {
+			return "no matches below here"
+		}
+		return ""
+	}
+	if f.atEnd {
+		return "— end of file —"
+	}
+	return ""
+}
+
+// rulesSummary is the one-line reminder of what is already in force.
+func (a *App) rulesSummary() string {
+	only := a.rules.Count(filter.Only)
+	never := a.rules.Count(filter.Never)
+	hl := a.rules.Count(filter.Highlight)
+	if only+never+hl == 0 {
+		return ""
+	}
+	var parts []string
+	if only > 0 {
+		parts = append(parts, fmt.Sprintf("only %d", only))
+	}
+	if never > 0 {
+		parts = append(parts, fmt.Sprintf("never %d", never))
+	}
+	if hl > 0 {
+		parts = append(parts, fmt.Sprintf("hl %d", hl))
+	}
+	return strings.Join(parts, "  ") + "  (= to edit)"
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// editRule reopens an existing rule in the finder, so changing a pattern shows
+// what the new one catches exactly as writing it did.
+func (a *App) editRule(i int) {
+	rules := a.rules.All()
+	if i < 0 || i >= len(rules) {
+		return
+	}
+	r := rules[i]
+
+	kind := findHighlight
+	switch r.Action {
+	case filter.Only:
+		kind = findOnly
+	case filter.Never:
+		kind = findNever
+	}
+
+	a.openFinder(kind, r.M.Pattern())
+	a.find.editing = i
+	a.find.color = r.Color
+	a.find.style = a.styleFor(r.Color)
+	a.find.mode = r.M.Mode()
+	a.restartFinder()
+}

@@ -37,6 +37,9 @@ type File struct {
 type Rule struct {
 	Action  string `json:"action"`
 	Pattern string `json:"pattern"`
+	// Match is how the pattern is read: literal or regex. It is part of what
+	// the rule means, so it travels with it; absent means literal.
+	Match string `json:"match,omitempty"`
 	// Disabled rather than Enabled, so the common case is an absent field and
 	// a hand-written file needs only an action and a pattern.
 	Disabled bool `json:"disabled,omitempty"`
@@ -57,9 +60,14 @@ func (f *File) Empty() bool {
 func From(set *filter.Set, cs filter.Case) *File {
 	f := &File{Version: Version, Case: cs.String()}
 	for _, r := range set.All() {
+		mode := ""
+		if r.M.Mode() != filter.Literal {
+			mode = r.M.Mode().String()
+		}
 		f.Rules = append(f.Rules, Rule{
 			Action:   r.Action.String(),
 			Pattern:  r.M.Pattern(),
+			Match:    mode,
 			Disabled: !r.Enabled,
 			Color:    colorHex(r.Color),
 		})
@@ -90,7 +98,11 @@ func (f *File) Set(fallback filter.Case) (*filter.Set, filter.Case, error) {
 		if r.Pattern == "" {
 			return nil, cs, fmt.Errorf("rule %d: empty pattern", i+1)
 		}
-		m, err := filter.Compile(r.Pattern, cs)
+		mode, err := filter.ParseMode(r.Match)
+		if err != nil {
+			return nil, cs, fmt.Errorf("rule %d: %w", i+1, err)
+		}
+		m, err := filter.Compile(r.Pattern, mode, cs)
 		if err != nil {
 			return nil, cs, fmt.Errorf("rule %d: %w", i+1, err)
 		}
@@ -180,7 +192,7 @@ func (f *File) Digest() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "case=%s\n", f.Case)
 	for _, r := range f.Rules {
-		fmt.Fprintf(&b, "%s\t%s\t%v\t%s\n", r.Action, r.Pattern, r.Disabled, r.Color)
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%v\t%s\n", r.Action, r.Pattern, r.Match, r.Disabled, r.Color)
 	}
 	return b.String()
 }

@@ -91,13 +91,23 @@ func (a *App) replaceRule(i int, pattern string) {
 	if i < 0 || i >= len(rules) {
 		return
 	}
-	m, err := filter.Compile(pattern, a.cfg.Case())
+	a.replaceRuleMode(i, pattern, rules[i].M.Mode())
+}
+
+// replaceRuleMode swaps a rule's pattern, keeping its action, colour and
+// position so the list does not reorder under the user mid-edit.
+func (a *App) replaceRuleMode(i int, pattern string, mode filter.Mode) {
+	rules := a.rules.All()
+	if i < 0 || i >= len(rules) {
+		return
+	}
+	old := rules[i]
+	m, err := filter.Compile(pattern, mode, a.cfg.Case())
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return
 	}
 
-	old := rules[i]
 	next := a.rules.Replace(i, filter.Rule{
 		Action:  old.Action,
 		M:       m,

@@ -162,13 +162,13 @@ func TestFilteredMatchesReference(t *testing.T) {
 	all, content := corpus(3000)
 	src, idx := setup(t, content, 7, 8)
 
-	keep, err := filter.Compile("ERROR", filter.Sensitive)
+	keep, err := filter.Compile("ERROR", filter.Literal, filter.Sensitive)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Long enough that it culls a minority of the ERROR lines rather than all
 	// of them, so both rules genuinely participate.
-	drop, err := filter.Compile(strings.Repeat("x", 30), filter.Sensitive)
+	drop, err := filter.Compile(strings.Repeat("x", 30), filter.Literal, filter.Sensitive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestFilteredEmptyResult(t *testing.T) {
 	_, content := corpus(200)
 	src, idx := setup(t, content, 8, 0)
 
-	m, _ := filter.Compile("no-such-text-anywhere", filter.Sensitive)
+	m, _ := filter.Compile("no-such-text-anywhere", filter.Literal, filter.Sensitive)
 	f := newFiltered(t, src, idx, filter.NewSet().
 		Add(filter.Rule{Action: filter.Only, M: m, Enabled: true}))
 	waitScan(t, f)
@@ -282,7 +282,7 @@ func TestSearch(t *testing.T) {
 	src, idx := setup(t, content, 16, 0)
 	v := NewBase(src, idx, 128, 1<<20)
 
-	m, err := filter.Compile("ERROR", filter.Sensitive)
+	m, err := filter.Compile("ERROR", filter.Literal, filter.Sensitive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestSearch(t *testing.T) {
 	})
 
 	t.Run("no match", func(t *testing.T) {
-		nm, _ := filter.Compile("absolutely-not-present", filter.Sensitive)
+		nm, _ := filter.Compile("absolutely-not-present", filter.Literal, filter.Sensitive)
 		if _, found, err := Search(ctx, v, 0, nm, false, nil); found || err != nil {
 			t.Fatalf("Search = (%v, %v), want (false, nil)", found, err)
 		}
@@ -329,7 +329,7 @@ func TestSearch(t *testing.T) {
 	t.Run("cancellation", func(t *testing.T) {
 		cctx, cancel := context.WithCancel(ctx)
 		cancel()
-		nm, _ := filter.Compile("absolutely-not-present", filter.Sensitive)
+		nm, _ := filter.Compile("absolutely-not-present", filter.Literal, filter.Sensitive)
 		if _, _, err := Search(cctx, v, 0, nm, false, nil); err == nil {
 			t.Log("search completed before noticing cancellation, which is fine for a small corpus")
 		}

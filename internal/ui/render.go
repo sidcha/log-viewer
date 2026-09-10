@@ -20,10 +20,17 @@ func (a *App) draw() {
 	a.cols = w
 	a.curX, a.curY = -1, -1
 
-	status := a.showStatus()
-	rows := h
+	// The finder takes the bottom of the screen and brings its own status, so
+	// the log simply gets fewer rows while it is open.
+	findH := 0
+	if a.find != nil {
+		findH = a.finderHeight(h)
+	}
+	status := findH == 0 && a.showStatus()
+
+	rows := h - findH
 	if status {
-		rows = h - 1
+		rows--
 	}
 	if rows < 1 {
 		rows = 1
@@ -60,6 +67,9 @@ func (a *App) draw() {
 	if status {
 		a.drawStatus(h-1, w)
 	}
+	if findH > 0 {
+		a.drawFinder(h-findH, w, findH)
+	}
 	if a.ov != nil {
 		a.ov.draw(a, w, h)
 	}
@@ -75,6 +85,8 @@ func (a *App) draw() {
 // line says which row; it cannot say which character.
 func (a *App) placeCursor() {
 	switch {
+	case a.find != nil:
+		return // the finder put it on its own input line
 	case a.prompt != nil || a.confirm != nil:
 		return // the prompt put it on the status row
 	case a.ov != nil || a.curX < 0:
@@ -161,14 +173,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 		rowBase = base.Background(bg)
 	}
 
-	if dropped, _ := a.prev.verdict(ln.Text); dropped {
-		// The candidate rule would remove this line. Paint the whole thing in
-		// one muted style rather than letting syntax colour argue with it, so
-		// what survives reads at a glance.
-		a.flatStyles(a.cfg.Style("preview.dropped"))
-	} else {
-		a.applyStyles(text, idx, base)
-	}
+	a.applyStyles(text, idx, base)
 	a.markCursorLine(idx)
 	a.markSelection(idx, len(ln.Text))
 	if idx == a.cursorLine() {
@@ -226,11 +231,6 @@ func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 		a.paint(a.search.m, text, st, n)
 	}
 
-	// The pattern being typed wins over everything, so its effect is legible
-	// against whatever is already on screen.
-	if a.prev != nil && a.prev.m != nil {
-		a.paint(a.prev.m, text, a.prev.style, n)
-	}
 }
 
 // cursorTint reports the background for the row the cursor is on.

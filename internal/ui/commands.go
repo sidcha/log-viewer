@@ -3,8 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/export"
@@ -22,7 +22,7 @@ func (a *App) ApplyStartup(only, never, marks []string) error {
 	set := a.rules
 	add := func(action filter.Action, pats []string, flag string) error {
 		for _, p := range pats {
-			m, err := filter.Compile(p, a.cfg.Case())
+			m, err := filter.Compile(p, filter.Literal, a.cfg.Case())
 			if err != nil {
 				return fmt.Errorf("%s %q: %w", flag, p, err)
 			}
@@ -218,16 +218,18 @@ func (a *App) exec(cmd config.Command, count int64) {
 	// ---------------------------------------------------------------- search
 	case "search-forward":
 		if len(cmd.Args) == 1 {
-			a.doSearch(cmd.Args[0], false)
+			pattern, mode := splitModePrefix(cmd.Args[0], defaultMode(findSearch))
+			a.doSearchMode(pattern, mode, false)
 			return
 		}
-		a.openPattern(actSearch, false)
+		a.openFinder(findSearch, "")
 	case "search-backward":
 		if len(cmd.Args) == 1 {
-			a.doSearch(cmd.Args[0], true)
+			pattern, mode := splitModePrefix(cmd.Args[0], defaultMode(findSearch))
+			a.doSearchMode(pattern, mode, true)
 			return
 		}
-		a.openPattern(actSearch, true)
+		a.openFinder(findSearch, "")
 	case "search-next":
 		a.searchStep(false)
 	case "search-prev":
@@ -249,11 +251,11 @@ func (a *App) exec(cmd config.Command, count int64) {
 
 	// ----------------------------------------------------------------- rules
 	case "filter-only":
-		a.ruleCommand(cmd, actOnly)
+		a.ruleCommand(cmd, findOnly)
 	case "filter-never":
-		a.ruleCommand(cmd, actNever)
+		a.ruleCommand(cmd, findNever)
 	case "highlight":
-		a.ruleCommand(cmd, actHighlight)
+		a.ruleCommand(cmd, findHighlight)
 
 	case "filter-pop":
 		if a.rules.Len() == 0 {
@@ -358,21 +360,29 @@ func (a *App) searchWordUnderCursor(back bool) {
 		a.errorf("no word under the cursor")
 		return
 	}
-	a.doSearch(regexpQuote(word), back)
+	// The word is taken exactly: * means this word, not something like it.
+	a.doSearchMode(word, filter.Literal, back)
 }
 
-// regexpQuote escapes a literal so it can be used where a pattern is expected.
-func regexpQuote(s string) string { return regexp.QuoteMeta(s) }
-
 // ruleCommand adds a rule directly when given a pattern, and otherwise opens
-// the prompt so the pattern can be previewed before it is committed.
-func (a *App) ruleCommand(cmd config.Command, act promptAction) {
+// the window where the pattern's matches can be seen before it is committed.
+func (a *App) ruleCommand(cmd config.Command, kind finderKind) {
 	if len(cmd.Args) == 1 {
-		action, _ := act.rule()
-		a.addRule(action, cmd.Args[0], filter.Color{})
+		action, _ := kind.rule()
+		pattern, mode := splitModePrefix(cmd.Args[0], defaultMode(kind))
+		a.addRuleMode(action, pattern, mode, filter.Color{})
 		return
 	}
-	a.openPattern(act, false)
+	a.openFinder(kind, "")
+}
+
+// splitModePrefix reads an explicit mode off a pattern given on the command
+// line, where there is no key to toggle one: `re:` asks for PCRE.
+func splitModePrefix(pattern string, def filter.Mode) (string, filter.Mode) {
+	if rest, ok := strings.CutPrefix(pattern, "re:"); ok {
+		return rest, filter.Regex
+	}
+	return pattern, def
 }
 
 func (a *App) pageStep() int64 {
@@ -421,10 +431,15 @@ func (a *App) reload() {
 
 // ------------------------------------------------------------------- rules
 
-// addRule compiles a pattern and appends it. color may be zero, in which case
-// one is assigned.
+// addRule appends a literal-match rule. color may be zero, in which case one
+// is assigned.
 func (a *App) addRule(action filter.Action, pattern string, color filter.Color) {
-	m, err := filter.Compile(pattern, a.cfg.Case())
+	a.addRuleMode(action, pattern, filter.Literal, color)
+}
+
+// addRuleMode appends a rule read in a given mode.
+func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode, color filter.Color) {
+	m, err := filter.Compile(pattern, mode, a.cfg.Case())
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return
@@ -553,8 +568,28 @@ func (a *App) gotoSourceLine(n int64) {
 
 // -------------------------------------------------------------------- search
 
+// doSearchAt installs a search and goes straight to a line already chosen in
+// the finder, instead of scanning for the next match.
+func (a *App) doSearchAt(pattern string, mode filter.Mode, num int64) {
+	m, err := filter.Compile(pattern, mode, a.cfg.Case())
+	if err != nil {
+		a.errorf("bad pattern: %v", err)
+		return
+	}
+	a.search = searchState{m: m, pat: pattern, back: false, cur: -1}
+	if num > 0 {
+		a.gotoSourceLine(num)
+	}
+}
+
+// doSearch runs a search the way / does, for callers that have no mode of
+// their own to offer.
 func (a *App) doSearch(pattern string, back bool) {
-	m, err := filter.Compile(pattern, a.cfg.Case())
+	a.doSearchMode(pattern, defaultMode(findSearch), back)
+}
+
+func (a *App) doSearchMode(pattern string, mode filter.Mode, back bool) {
+	m, err := filter.Compile(pattern, mode, a.cfg.Case())
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return

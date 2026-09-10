@@ -89,6 +89,34 @@ func numberedLine(i int) string {
 	return fmt.Sprintf("line %03d %s", i, kind)
 }
 
+// typeInto sends a string to whatever is taking input, one key at a time, so
+// an incremental scan is driven exactly as it would be for a real typist.
+func typeInto(a *App, s string) {
+	for _, r := range s {
+		a.key(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
+	}
+}
+
+func press(a *App, k tcell.Key) {
+	a.key(tcell.NewEventKey(k, 0, tcell.ModNone))
+}
+
+func rowStyles(scr tcell.SimulationScreen, row int) []tcell.Style {
+	out := make([]tcell.Style, 0, testW)
+	for x := 0; x < testW; x++ {
+		_, _, st, _ := scr.GetContent(x, row)
+		out = append(out, st)
+	}
+	return out
+}
+
+// fg compares by foreground only. The cursor line tints the background, so a
+// whole-style comparison would depend on where the cursor happens to be.
+func fg(st tcell.Style) tcell.Color {
+	c, _, _ := st.Decompose()
+	return c
+}
+
 func run(a *App, names ...string) {
 	for _, n := range names {
 		a.exec(config.Command{Name: n}, 0)
@@ -390,51 +418,47 @@ func TestKeyDispatch(t *testing.T) {
 	}
 }
 
-func TestPromptEditingAndSubmit(t *testing.T) {
+func TestFinderEditingAndSubmit(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	full := a.viewLen()
 
-	// `!` opens the discard prompt.
+	// `!` opens the discard window.
 	a.key(tcell.NewEventKey(tcell.KeyRune, '!', tcell.ModNone))
-	if a.prompt == nil {
-		t.Fatal("! did not open a prompt")
+	if a.find == nil {
+		t.Fatal("! did not open the finder")
 	}
-	for _, r := range "INFOX" {
-		a.key(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
-	}
-	a.key(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
-	if got := string(a.prompt.buf); got != "INFO" {
-		t.Fatalf("prompt buffer = %q, want INFO", got)
+	typeInto(a, "INFOX")
+	press(a, tcell.KeyBackspace2)
+	if got := string(a.find.buf); got != "INFO" {
+		t.Fatalf("finder buffer = %q, want INFO", got)
 	}
 
 	a.key(tcell.NewEventKey(tcell.KeyEnter, '\r', tcell.ModNone))
-	if a.prompt != nil {
-		t.Error("Enter did not close the prompt")
+	if a.find != nil {
+		t.Error("Enter did not close the finder")
 	}
 	waitFiltered(t, a)
 	if a.viewLen() >= full {
-		t.Fatalf("the prompt's filter was not applied: Len = %d of %d", a.viewLen(), full)
+		t.Fatalf("the rule was not applied: Len = %d of %d", a.viewLen(), full)
 	}
 	if len(a.histPattern) != 1 || a.histPattern[0] != "INFO" {
 		t.Errorf("pattern history = %v", a.histPattern)
 	}
 }
 
-func TestPromptEscapeCancels(t *testing.T) {
+func TestFinderEscapeCancels(t *testing.T) {
 	a, _ := newTestApp(t, numbered(20))
 	before := a.viewLen()
 
 	a.key(tcell.NewEventKey(tcell.KeyRune, '!', tcell.ModNone))
-	for _, r := range "INFO" {
-		a.key(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
-	}
-	a.key(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	typeInto(a, "INFO")
+	press(a, tcell.KeyEscape)
 
-	if a.prompt != nil {
-		t.Error("Escape did not close the prompt")
+	if a.find != nil {
+		t.Error("Escape did not close the finder")
 	}
 	if a.viewLen() != before {
-		t.Error("Escape applied the filter anyway")
+		t.Error("Escape applied the rule anyway")
 	}
 }
 

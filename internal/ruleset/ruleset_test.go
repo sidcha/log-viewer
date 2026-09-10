@@ -21,7 +21,7 @@ func mustSet(t *testing.T, rules ...filter.Rule) *filter.Set {
 
 func rule(t *testing.T, a filter.Action, pat string, enabled bool) filter.Rule {
 	t.Helper()
-	m, err := filter.Compile(pat, filter.Sensitive)
+	m, err := filter.Compile(pat, filter.Literal, filter.Sensitive)
 	if err != nil {
 		t.Fatalf("Compile(%q): %v", pat, err)
 	}
@@ -120,6 +120,69 @@ func TestCaseIsPreserved(t *testing.T) {
 	}
 }
 
+// TestMatchModeIsPreserved: how a pattern is read is part of what the rule
+// means, so `a.b` must not come back matching "axb" a week later.
+func TestMatchModeIsPreserved(t *testing.T) {
+	m, err := filter.Compile(`ERR(OR)?`, filter.Regex, filter.Sensitive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := mustSet(t,
+		rule(t, filter.Only, "a.b", true),
+		filter.Rule{Action: filter.Highlight, M: m, Enabled: true},
+	)
+
+	f := From(set, filter.Sensitive)
+	if f.Rules[0].Match != "" {
+		t.Errorf("a literal rule wrote match=%q, want it left out", f.Rules[0].Match)
+	}
+	if f.Rules[1].Match != "regex" {
+		t.Errorf("a regex rule wrote match=%q, want regex", f.Rules[1].Match)
+	}
+
+	path := filepath.Join(t.TempDir(), "rules.json")
+	if err := f.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := back.Set(filter.Sensitive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rules := got.All()
+	if rules[0].M.Mode() != filter.Literal {
+		t.Errorf("rule 1 came back as %v, want literal", rules[0].M.Mode())
+	}
+	if rules[0].M.Match([]byte("axb")) {
+		t.Error("the literal rule came back interpreting its dot")
+	}
+	if rules[1].M.Mode() != filter.Regex {
+		t.Errorf("rule 2 came back as %v, want regex", rules[1].M.Mode())
+	}
+	if !rules[1].M.Match([]byte("ERR here")) {
+		t.Error("the regex rule came back as plain text")
+	}
+}
+
+// TestDigestSeesTheMatchMode: the same characters read two ways are two
+// different rule sets, and quitting should notice.
+func TestDigestSeesTheMatchMode(t *testing.T) {
+	lit := mustSet(t, rule(t, filter.Only, "a.b", true))
+	m, err := filter.Compile("a.b", filter.Regex, filter.Sensitive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := mustSet(t, filter.Rule{Action: filter.Only, M: m, Enabled: true})
+
+	if From(lit, filter.Smart).Digest() == From(re, filter.Smart).Digest() {
+		t.Error("changing how the pattern is read did not change the digest")
+	}
+}
+
 func TestMinimalHandWrittenFile(t *testing.T) {
 	// Everything except action and pattern should be optional.
 	src := `{"rules":[{"action":"only","pattern":"ERROR"},{"action":"never","pattern":"noise"}]}`
@@ -176,7 +239,8 @@ func TestLoadErrors(t *testing.T) {
 		"not json":       `{`,
 		"bad action":     `{"rules":[{"action":"sideways","pattern":"a"}]}`,
 		"empty pattern":  `{"rules":[{"action":"only","pattern":""}]}`,
-		"bad regex":      `{"rules":[{"action":"only","pattern":"ERR("}]}`,
+		"bad regex":      `{"rules":[{"action":"only","pattern":"ERR(","match":"regex"}]}`,
+		"unknown match":  `{"rules":[{"action":"only","pattern":"a","match":"glob"}]}`,
 		"bad colour":     `{"rules":[{"action":"only","pattern":"a","color":"red"}]}`,
 		"short colour":   `{"rules":[{"action":"only","pattern":"a","color":"#fff"}]}`,
 		"unknown case":   `{"case":"whatever","rules":[]}`,

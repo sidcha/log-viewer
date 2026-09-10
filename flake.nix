@@ -21,7 +21,7 @@
           pname = "lv";
           inherit version;
           src = self;
-          vendorHash = "sha256-kwaBroOK/AkZbRIgCzlWDAThzC+A9dUYRjJlffnOJi8=";
+          vendorHash = "sha256-AO0h/UduT64whgst4oWQuy3cUdwYJ9oGgOeeSVGr4Xs=";
 
           ldflags = [
             "-s"

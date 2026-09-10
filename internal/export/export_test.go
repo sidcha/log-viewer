@@ -81,7 +81,7 @@ func TestSaveFilteredView(t *testing.T) {
 	content, errLines := sample(400)
 	src, idx, dir := build(t, content)
 
-	m, err := filter.Compile("ERROR", filter.Sensitive)
+	m, err := filter.Compile("ERROR", filter.Literal, filter.Sensitive)
 	if err != nil {
 		t.Fatal(err)
 	}

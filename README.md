@@ -81,11 +81,12 @@ be rebound independently.
 
 | | |
 |---|---|
-| `/` `?` | search forward / back — previews as you type |
+| `/` `?` | search forward / back — lists matches as you type |
 | `n` `N` | next / previous match |
 | `C-l` | drop the search highlight and repaint |
 | `*` `#` | search for the word under the cursor (move to it with `w`/`b`/`l`) |
 | `&` `!` `m` | add an only / never / highlight rule |
+| `C-r` | in any of those, read the pattern as PCRE instead |
 | `=` | the rule list: edit, enable, disable, delete |
 | `\` | disable every rule for a moment |
 | `C-p` `C-x` `zm` | remove the last rule, every rule, every highlight rule |
@@ -113,7 +114,7 @@ be rebound independently.
 :set wrap         toggle a setting; :set tab-width 4 to assign one
 :only ERROR       add a rule
 :never healthz
-:hl OOM
+:hl re:OOM|oom-killer   re: reads the pattern as a regular expression
 :noh              drop the search highlight (leaves your rules alone)
 :w out.log        write the current view
 :mks rules.json   write the rules
@@ -144,12 +145,11 @@ widens what is shown rather than replacing the last, so `&ERROR` then `&WARN`
 gives you both. `never` rules are and-ed, and always narrow. `=` spells out how
 the current set combines.
 
-While you are typing a further `only` pattern, the ones already in force are
-lifted and the whole log comes back, so you can see the lines the new pattern
-would bring in — they are, by definition, the ones currently hidden. What is
-dimmed is judged by the rules *as they would be*, so a line kept by an existing
-rule stays lit whether or not the pattern being typed matches it. Escape puts
-the filter back; Enter puts it back with the new pattern or-ed in.
+While you type a further `only` pattern the window searches the whole log rather
+than what is left of it, because the lines such a rule would bring back are by
+definition the ones currently hidden. Never rules still apply there: lines
+banished on purpose do not come back because a new pattern happens to match
+them.
 
 A search highlight is a separate, transient thing: `/` lights up every match,
 `C-l` or `:noh` drops it, and neither touches the rules you built. The reverse
@@ -168,7 +168,7 @@ without rebuilding it:
 | | |
 |---|---|
 | `Space` `Enter` | enable / disable the rule |
-| `e` | edit its pattern, with a live preview |
+| `e` | edit its pattern in the match window |
 | `a` | cycle it between only, never and highlight |
 | `r` | give it a different colour |
 | `d` | delete it |
@@ -202,10 +202,14 @@ but the action and the pattern is optional:
   "rules": [
     { "action": "only",      "pattern": "ERROR", "color": "#8decc8" },
     { "action": "never",     "pattern": "GET /healthz", "disabled": true },
-    { "action": "highlight", "pattern": "OOM|oom-killer" }
+    { "action": "highlight", "pattern": "OOM|oom-killer", "match": "regex" }
   ]
 }
 ```
+
+`match` is `literal` when absent, and how the pattern is read is saved with it:
+a rule written as plain text does not start interpreting its own punctuation
+because it was reloaded.
 
 A search is not part of this. It hides nothing and is replaced by the next
 pattern typed, so it never counts as unsaved work: searching and then quitting
@@ -215,31 +219,58 @@ The case mode is recorded because it is part of what the rules mean: a set built
 under `sensitive` would quietly widen if it were reloaded somewhere configured
 for smart case.
 
-### Preview
+### The match window
 
-While you are typing a pattern, `lv` shows what it would do to the lines already
-on screen — matching text painted in the colour the rule is about to take, lines
-the rule would remove dimmed, and a count beside the prompt:
+`/`, `?`, `&`, `!` and `m` open a window across the bottom of the screen that
+lists the lines the pattern actually matches, updated as you type. The log above
+is left exactly as it was: nothing is filtered, dimmed or moved until you press
+<kbd>Enter</kbd>, so the window can be opened, typed into and abandoned without
+losing your place.
 
-```
-only: ERROR    2 of 7 shown
-```
+| | |
+|---|---|
+| <kbd>↑</kbd> <kbd>↓</kbd> | pick a match |
+| <kbd>Tab</kbd> | go to it, leaving the window open |
+| <kbd>Enter</kbd> | apply the rule, or for `/` jump to the highlighted match |
+| <kbd>Esc</kbd> | cancel, changing nothing |
+| <kbd>C-r</kbd> | read the pattern as a regular expression, and back |
+| <kbd>C-p</kbd> <kbd>C-n</kbd> | recall patterns typed earlier |
 
-<kbd>Tab</kbd> cycles what <kbd>Enter</kbd> will do — search, only, never,
-highlight — keeping the pattern already typed. `/` starts on search, so it marks
-matches and jumps without touching which lines are shown; one Tab turns the same
-pattern into a filter.
+The search starts from where you are reading and runs down the file, stopping as
+soon as there are enough matches to fill the window — so it costs a few hundred
+kilobytes, not a pass over the log, however large the file is. For `!` the listed
+lines are the casualties, and are struck out to say so. For `&` the search
+deliberately looks past the filter in force: a further `only` rule is a question
+about lines that are currently hidden, which is precisely what an inline preview
+could never show. Rules already in force are summarised in the window's frame,
+and `=` opens the full list.
 
 An unbalanced bracket says so while you type rather than after you commit. Over
 a very large log a filter is slow to undo, and a pattern that looked right often
 is not.
 
-Patterns are regular expressions ([RE2][re2], so no pathological backtracking).
-A pattern with no metacharacters compiles to a plain substring search instead,
-which is much faster over a large file. Case follows `set case`, which defaults
-to `smart`: insensitive unless you type a capital letter.
+### How a pattern is read
 
-[re2]: https://github.com/google/re2/wiki/Syntax
+Three modes, chosen explicitly rather than guessed from the spelling:
+
+| | |
+|---|---|
+| **literal** | plain text; the default for `&`, `!` and `m` |
+| **fuzzy** | the characters in order with anything between; the default for `/` |
+| **regex** | [PCRE][pcre] — lookaround, backreferences, lazy quantifiers |
+
+A filter is saved, shared and reread months later, so it should mean exactly
+what it says: `a.b` matches `a.b`, not `axb`. A search is the opposite — you are
+reaching for a line you half remember, and `/erbd` should find
+`ERROR: bad descriptor`. <kbd>C-r</kbd> switches either to PCRE, which the window
+title shows, and the mode travels with the rule into the rules file.
+
+Because PCRE backtracks, a single match is bounded by a timeout: a pathological
+pattern over a hostile line stops rather than stalling the scan. Case follows
+`set case`, which defaults to `smart`: insensitive unless you type a capital
+letter.
+
+[pcre]: https://www.pcre.org/current/doc/html/pcre2pattern.html
 
 ## Configuration
 
@@ -288,7 +319,7 @@ bind ZQ        quit
 bind-visual y  yank
 
 rule never     'GET /healthz'
-rule highlight 'OOM|oom-killer' color=#ff5555
+rule highlight 'OOM|oom-killer' match=regex color=#ff5555
 
 style syntax.level.error fg=#ff0000 bold
 style cursor.line        bg=#303030
@@ -335,9 +366,9 @@ background happens to be `#1c1c1c`, and a dark smear on a light one.
 
 So lv asks. On startup it queries the terminal for its real foreground and
 background (OSC 10 and OSC 11) and derives the background-relative tints — the
-cursor line, and the dimming used while previewing a filter — by moving a fixed
-distance from the background towards the foreground. Those then sit correctly
-against any theme, without lv knowing which one it is.
+cursor line among them — by moving a fixed distance from the background towards
+the foreground. Those then sit correctly against any theme, without lv knowing
+which one it is.
 
 The rest of the palette is a pair of themes, chosen by whether the background
 came back dark or light. When the terminal will not answer, `COLORFGBG` decides;

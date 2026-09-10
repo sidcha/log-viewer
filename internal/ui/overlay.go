@@ -294,7 +294,7 @@ func (a *App) rulesListRune(o *overlay, r rune) bool {
 	case 'e', 'i', 'c':
 		if i := o.selected(); i >= 0 {
 			a.ov = nil
-			a.openRuleEdit(i)
+			a.editRule(i)
 		}
 	case 'a':
 		if i := o.selected(); i >= 0 {
@@ -381,7 +381,13 @@ func (a *App) showHelp() {
 		ovRow{text: "COUNTS AND SEQUENCES", style: "overlay.title", item: -1},
 		ovRow{text: "  Type a number before a motion to repeat it: 5j, 12k, 42G.", style: "overlay.dim", item: -1},
 		ovRow{text: "  : opens the command line; Tab completes command names.", style: "overlay.dim", item: -1},
-		ovRow{text: "  In / and ? Tab switches between search, only, never and highlight.", style: "overlay.dim", item: -1},
+		ovRow{text: "", item: -1},
+		ovRow{text: "THE MATCH WINDOW", style: "overlay.title", item: -1},
+		ovRow{text: "  / ? & ! and m open a window listing what the pattern matches.", style: "overlay.dim", item: -1},
+		ovRow{text: "  Up/Down pick a match, Tab goes to it, Enter applies, Esc cancels.", style: "overlay.dim", item: -1},
+		ovRow{text: "  <C-r> reads the pattern as a regular expression (PCRE) instead.", style: "overlay.dim", item: -1},
+		ovRow{text: "  <C-p> and <C-n> recall patterns typed earlier.", style: "overlay.dim", item: -1},
+		ovRow{text: "  / searches loosely; & ! and m match the text exactly as typed.", style: "overlay.dim", item: -1},
 		ovRow{text: "", item: -1},
 		ovRow{text: "CONFIG", style: "overlay.title", item: -1},
 	)
@@ -416,7 +422,7 @@ func (a *App) showRules() {
 	rules := a.rules.All()
 	if len(rules) == 0 {
 		o.rows = append(o.rows, ovRow{
-			text:  "  no rules yet -- & only, ! never, / search, Tab to switch",
+			text:  "  no rules yet -- & only, ! never, m highlight",
 			style: "overlay.dim",
 			item:  -1,
 		})
@@ -426,8 +432,14 @@ func (a *App) showRules() {
 		if !r.Enabled {
 			mark = "off"
 		}
+		// How the pattern is read changes what it matches, so a rule that is
+		// not plain text says so.
+		pattern := r.M.Pattern()
+		if m := r.M.Mode(); m != filter.Literal {
+			pattern = fmt.Sprintf("%s  [%s]", pattern, m)
+		}
 		o.rows = append(o.rows, ovRow{
-			text:   fmt.Sprintf("  %s  %-9s %s", mark, r.Action, r.M.Pattern()),
+			text:   fmt.Sprintf("  %s  %-9s %s", mark, r.Action, pattern),
 			dim:    !r.Enabled,
 			swatch: r.Color,
 			item:   i,

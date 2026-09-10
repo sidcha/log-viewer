@@ -8,7 +8,6 @@ package filter
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
 )
 
@@ -72,28 +71,25 @@ func (c Case) String() string {
 type Matcher interface {
 	Match(line []byte) bool
 	Pattern() string
+	// Mode is how the pattern is being interpreted, so a rule can be saved
+	// and reloaded meaning the same thing.
+	Mode() Mode
 	// Find returns byte ranges matched within line, appended to dst. It is used
 	// for highlighting, never on the filtering hot path.
 	Find(line []byte, dst [][2]int, limit int) [][2]int
 }
 
-const metachars = `\.+*?()|[]{}^$`
-
-// Compile builds the cheapest matcher that implements pattern.
-func Compile(pattern string, c Case) (Matcher, error) {
+// Compile builds a matcher for a pattern in a given mode.
+func Compile(pattern string, mode Mode, c Case) (Matcher, error) {
 	fold := foldFor(pattern, c)
-	if !strings.ContainsAny(pattern, metachars) {
+	switch mode {
+	case Fuzzy:
+		return newFuzzy(pattern, fold), nil
+	case Regex:
+		return newPCRE(pattern, fold)
+	default:
 		return newLiteral(pattern, fold), nil
 	}
-	expr := pattern
-	if fold {
-		expr = "(?i)" + expr
-	}
-	re, err := regexp.Compile(expr)
-	if err != nil {
-		return nil, err
-	}
-	return &reMatcher{re: re, pat: pattern}, nil
 }
 
 func foldFor(pattern string, c Case) bool {
@@ -105,23 +101,6 @@ func foldFor(pattern string, c Case) bool {
 	default:
 		return !strings.ContainsAny(pattern, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	}
-}
-
-type reMatcher struct {
-	re  *regexp.Regexp
-	pat string
-}
-
-func (m *reMatcher) Match(line []byte) bool { return m.re.Match(line) }
-func (m *reMatcher) Pattern() string        { return m.pat }
-
-func (m *reMatcher) Find(line []byte, dst [][2]int, limit int) [][2]int {
-	for _, loc := range m.re.FindAllIndex(line, limit) {
-		if loc[1] > loc[0] {
-			dst = append(dst, [2]int{loc[0], loc[1]})
-		}
-	}
-	return dst
 }
 
 // literal matches a plain substring, optionally ASCII case-folded.
@@ -141,6 +120,7 @@ func newLiteral(pattern string, fold bool) *literal {
 }
 
 func (l *literal) Pattern() string { return l.raw }
+func (l *literal) Mode() Mode      { return Literal }
 
 func (l *literal) Match(line []byte) bool {
 	if len(l.pat) == 0 {

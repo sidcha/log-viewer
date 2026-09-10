@@ -8,19 +8,37 @@ import (
 
 func mustCompile(t *testing.T, pat string, c Case) Matcher {
 	t.Helper()
-	m, err := Compile(pat, c)
+	return mustCompileMode(t, pat, Literal, c)
+}
+
+func mustCompileMode(t *testing.T, pat string, mode Mode, c Case) Matcher {
+	t.Helper()
+	m, err := Compile(pat, mode, c)
 	if err != nil {
-		t.Fatalf("Compile(%q): %v", pat, err)
+		t.Fatalf("Compile(%q, %v): %v", pat, mode, err)
 	}
 	return m
 }
 
-func TestCompileChoosesLiteralFastPath(t *testing.T) {
-	if _, ok := mustCompile(t, "ERROR", Sensitive).(*literal); !ok {
-		t.Error("a plain pattern should compile to the substring matcher")
+// TestCompileHonoursTheRequestedMode: the mode is what the caller asked for,
+// never inferred from the spelling of the pattern.
+func TestCompileHonoursTheRequestedMode(t *testing.T) {
+	// A pattern full of metacharacters still compiles to a plain substring.
+	lit := mustCompileMode(t, `err(or)?`, Literal, Sensitive)
+	if _, ok := lit.(*literal); !ok {
+		t.Errorf("literal mode compiled to %T, want the substring matcher", lit)
 	}
-	if _, ok := mustCompile(t, `err(or)?`, Sensitive).(*reMatcher); !ok {
-		t.Error("a pattern with metacharacters should compile to a regexp")
+	if !lit.Match([]byte("err(or)? happened")) || lit.Match([]byte("error happened")) {
+		t.Error("literal mode should match the pattern's characters, not interpret them")
+	}
+
+	for _, tc := range []struct {
+		mode Mode
+		want Mode
+	}{{Literal, Literal}, {Fuzzy, Fuzzy}, {Regex, Regex}} {
+		if got := mustCompileMode(t, "abc", tc.mode, Sensitive).Mode(); got != tc.want {
+			t.Errorf("Compile(%v).Mode() = %v", tc.mode, got)
+		}
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 
 func rule(t *testing.T, a Action, pat string) Rule {
 	t.Helper()
-	m, err := Compile(pat, Sensitive)
+	m, err := Compile(pat, Literal, Sensitive)
 	if err != nil {
 		t.Fatalf("Compile(%q): %v", pat, err)
 	}

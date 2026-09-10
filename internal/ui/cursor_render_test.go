@@ -104,14 +104,15 @@ func TestCursorHandlesTabs(t *testing.T) {
 	}
 }
 
-// TestPromptOwnsTheCursor: while typing, the cursor belongs to the prompt.
+// TestPromptOwnsTheCursor: while typing a command, the cursor belongs to the
+// bottom row rather than to the line it came from.
 func TestPromptOwnsTheCursor(t *testing.T) {
 	a, scr := newTestApp(t, numbered(20))
 	keys(a, "j")
 	a.draw()
 
-	a.key(tcell.NewEventKey(tcell.KeyRune, '/', tcell.ModNone))
-	typeInto(a, "ERR")
+	a.key(tcell.NewEventKey(tcell.KeyRune, ':', tcell.ModNone))
+	typeInto(a, "set")
 	a.draw()
 
 	_, y := cursorAt(t, scr)
@@ -123,6 +124,33 @@ func TestPromptOwnsTheCursor(t *testing.T) {
 	a.draw()
 	if _, y := cursorAt(t, scr); y != 1 {
 		t.Errorf("after the prompt closed the cursor is on row %d, want 1", y)
+	}
+}
+
+// TestFinderOwnsTheCursor: the same for the pattern window, whose input line
+// sits inside the box rather than on the bottom row.
+func TestFinderOwnsTheCursor(t *testing.T) {
+	a, scr := newTestApp(t, numbered(20))
+	keys(a, "j")
+	a.draw()
+
+	a.key(tcell.NewEventKey(tcell.KeyRune, '/', tcell.ModNone))
+	typeInto(a, "ERR")
+	a.draw()
+
+	want := testH - a.finderHeight(testH) + 1
+	x, y := cursorAt(t, scr)
+	if y != want {
+		t.Errorf("while finding the cursor is on row %d, want the input row %d", y, want)
+	}
+	if want := 1 + 2 + len("ERR"); x != want {
+		t.Errorf("cursor column %d, want %d (after the typed text)", x, want)
+	}
+
+	a.key(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	a.draw()
+	if _, y := cursorAt(t, scr); y != 1 {
+		t.Errorf("after the finder closed the cursor is on row %d, want 1", y)
 	}
 }
 

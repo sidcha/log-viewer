@@ -57,7 +57,6 @@ var Settings = []Setting{
 	{"watch-backstop", kDur, "2s", nil, "poll interval alongside kernel change notifications"},
 	{"watch-fallback", kDur, "200ms", nil, "poll interval when notifications are unavailable"},
 	{"scan-poll", kDur, "200ms", nil, "how often a caught-up filter scan looks for new data"},
-	{"preview-sample", kInt, "2000", nil, "lines sampled to count matches while typing a pattern"},
 	{"block-size", kInt, "1048576", nil, "bytes read per syscall"},
 	{"max-line-bytes", kInt, "1048576", nil, "how much of one line is retained"},
 	{"max-scan-bytes", kInt, "4096", nil, "bytes of a line examined for highlighting"},
@@ -94,6 +93,7 @@ type Bind struct {
 // Preset is a rule declared in configuration rather than added at runtime.
 type Preset struct {
 	Action  filter.Action
+	Mode    filter.Mode
 	Pattern string
 	// Color is set when the file pins one; otherwise the viewer assigns it.
 	Color filter.Color
@@ -415,7 +415,7 @@ func (c *Config) directive(st stmt) error {
 
 	case "rule":
 		if len(w) < 3 {
-			return st.errf("usage: rule <only|never|highlight> <pattern> [color=#rrggbb]")
+			return st.errf("usage: rule <only|never|highlight> <pattern> [match=literal|regex] [color=#rrggbb]")
 		}
 		action, err := ParseAction(w[1])
 		if err != nil {
@@ -424,14 +424,25 @@ func (c *Config) directive(st stmt) error {
 		p := Preset{Action: action, Pattern: w[2]}
 		for _, extra := range w[3:] {
 			k, v, ok := strings.Cut(extra, "=")
-			if !ok || k != "color" {
+			if !ok {
 				return st.errf("unknown rule option %q", extra)
 			}
-			col, err := parseRuleColor(v)
-			if err != nil {
-				return st.errf("%v", err)
+			switch k {
+			case "color":
+				col, err := parseRuleColor(v)
+				if err != nil {
+					return st.errf("%v", err)
+				}
+				p.Color = col
+			case "match":
+				mode, err := filter.ParseMode(v)
+				if err != nil {
+					return st.errf("%v", err)
+				}
+				p.Mode = mode
+			default:
+				return st.errf("unknown rule option %q", extra)
 			}
-			p.Color = col
 		}
 		c.presets = append(c.presets, p)
 
@@ -647,6 +658,9 @@ func (c *Config) Dump() string {
 		b.WriteString("\n# rules\n")
 		for _, p := range c.presets {
 			fmt.Fprintf(&b, "rule %-9s %s", p.Action, quoteWord(p.Pattern))
+			if p.Mode != filter.Literal {
+				fmt.Fprintf(&b, " match=%s", p.Mode)
+			}
 			if p.Color != (filter.Color{}) {
 				fmt.Fprintf(&b, " color=#%02x%02x%02x", p.Color.R, p.Color.G, p.Color.B)
 			}

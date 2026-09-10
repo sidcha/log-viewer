@@ -170,7 +170,7 @@ func TestScale(t *testing.T) {
 	})
 
 	t.Run("filtering finds every match", func(t *testing.T) {
-		m, err := filter.Compile(pattern, filter.Sensitive)
+		m, err := filter.Compile(pattern, filter.Literal, filter.Sensitive)
 		if err != nil {
 			t.Fatal(err)
 		}

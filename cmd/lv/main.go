@@ -36,12 +36,9 @@ const sniffBytes = 1 << 16
 // query. It is paid once, at startup.
 const queryTimeout = 150 * time.Millisecond
 
-// How far the derived tints sit from the terminal background, towards its
+// How far the derived tint sits from the terminal background, towards its
 // foreground: enough to see, not enough to distract.
-const (
-	cursorLineMix = 0.14
-	droppedMix    = 0.42
-)
+const cursorLineMix = 0.14
 
 type stringList []string
 
@@ -272,8 +269,6 @@ func deriveStyles(cfg *config.Config, term termcolor.Colors) {
 
 	cfg.SetDerivedStyle("cursor.line", tcell.StyleDefault.
 		Background(toTcell(termcolor.Blend(bg, fg, cursorLineMix))))
-	cfg.SetDerivedStyle("preview.dropped", tcell.StyleDefault.
-		Foreground(toTcell(termcolor.Blend(bg, fg, droppedMix))))
 }
 
 func toTcell(c termcolor.RGB) tcell.Color {
