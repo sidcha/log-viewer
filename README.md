@@ -273,15 +273,19 @@ Three modes, chosen explicitly rather than guessed from the spelling:
 
 | | |
 |---|---|
-| **literal** | plain text; the default for `&`, `!` and `m` |
-| **fuzzy** | the characters in order with anything between; the default for `f` and `/` |
+| **literal** | plain text; the default everywhere but `f` |
+| **fuzzy** | the characters in order with anything between; the default for `f` |
 | **regex** | [PCRE][pcre] — lookaround, backreferences, lazy quantifiers |
 
-A filter is saved, shared and reread months later, so it should mean exactly
-what it says: `a.b` matches `a.b`, not `axb`. Finding a line is the opposite —
-you are reaching for something you half remember, and `ferbd` should land on
-`ERROR: bad descriptor`. <kbd>C-r</kbd> switches either to PCRE, which the window
-title shows, and the mode travels with the rule into the rules file.
+A pattern means the characters in it. A filter is saved, shared and reread
+months later, so it had better say what it means — `a.b` matches `a.b`, not
+`axb` — and a search is no different: `/` finds what you typed, not everything
+with those letters scattered through it.
+
+`f` is the exception, because loose matching is the entire point of it: you are
+reaching for a line from a half-remembered fragment, and `f` `erbd` should land
+on `ERROR: bad descriptor`. <kbd>C-r</kbd> switches any of them to PCRE, which
+the window title shows, and the mode travels with the rule into the rules file.
 
 Because PCRE backtracks, a single match is bounded by a timeout: a pathological
 pattern over a hostile line stops rather than stalling the scan. Case follows

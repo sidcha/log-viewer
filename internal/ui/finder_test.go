@@ -115,26 +115,50 @@ func TestFinderSearchesFromTheReadingPosition(t *testing.T) {
 	}
 }
 
-// TestFinderSearchIsFuzzyAndRulesAreLiteral: reaching for a line you half
-// remember is a different job from writing down a filter.
-func TestFinderSearchIsFuzzyAndRulesAreLiteral(t *testing.T) {
+// TestOnlyTheJumpIsFuzzy: f is the loose one. A search and a rule both mean
+// the characters typed, or / would be a different tool than the one everybody
+// reaches for it expecting.
+func TestOnlyTheJumpIsFuzzy(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 
-	f := openFinderWith(t, a, '/', "ERR bd")
+	f := openFinderWith(t, a, 'f', "ERR bd")
 	if f.mode != filter.Fuzzy {
-		t.Fatalf("search mode = %v, want fuzzy", f.mode)
+		t.Fatalf("jump mode = %v, want fuzzy", f.mode)
 	}
 	if len(f.rows) == 0 {
-		t.Error("a fuzzy search should reach ERROR bad through the gaps")
+		t.Error("a fuzzy jump should reach ERROR bad through the gaps")
 	}
 	press(a, tcell.KeyEscape)
 
-	f = openFinderWith(t, a, '&', "ERR bd")
-	if f.mode != filter.Literal {
-		t.Fatalf("rule mode = %v, want literal", f.mode)
+	for _, open := range []rune{'/', '?', '&', '!', 'm'} {
+		f = openFinderWith(t, a, open, "ERR bd")
+		if f.mode != filter.Literal {
+			t.Errorf("%q opened in %v, want literal", open, f.mode)
+		}
+		if len(f.rows) != 0 {
+			t.Errorf("%q matched %d lines for a pattern no line contains", open, len(f.rows))
+		}
+		press(a, tcell.KeyEscape)
 	}
-	if len(f.rows) != 0 {
-		t.Errorf("a literal rule matched %d lines, want none", len(f.rows))
+}
+
+// TestSearchIsLiteral all the way to the search that n and N walk, not just in
+// the window that collected it.
+func TestSearchIsLiteral(t *testing.T) {
+	a, _ := newTestApp(t, "ERROR here\nE bad R bad R\n")
+	a.draw()
+
+	openFinderWith(t, a, '/', "ERROR")
+	a.key(tcell.NewEventKey(tcell.KeyEnter, '\r', tcell.ModNone))
+
+	if a.search.m == nil {
+		t.Fatal("no search installed")
+	}
+	if got := a.search.m.Mode(); got != filter.Literal {
+		t.Fatalf("search reads as %v, want literal", got)
+	}
+	if a.search.m.Match([]byte("E bad R bad R")) {
+		t.Error("the search matched a line that merely has the letters in order")
 	}
 }
 

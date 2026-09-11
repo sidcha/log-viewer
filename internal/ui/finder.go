@@ -120,11 +120,13 @@ const finderLookahead = 20
 
 // defaultMode is how a pattern is read before C-r is pressed.
 //
-// Reaching for a line is loose and a rule is exact: a search or a jump is a
-// half-remembered fragment, while a filter is written down and reread later,
-// so it had better mean what it says.
+// Only the jump window is loose, because that is the whole point of it: you
+// are reaching for a line from a half-remembered fragment. Everywhere else the
+// pattern means the characters in it. A search that quietly matched anything
+// with those letters somewhere in it would be a different tool than the one
+// everybody reaches for / expecting.
 func defaultMode(kind finderKind) filter.Mode {
-	if kind == findSearch || kind == findJump {
+	if kind == findJump {
 		return filter.Fuzzy
 	}
 	return filter.Literal

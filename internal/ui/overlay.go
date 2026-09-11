@@ -387,7 +387,7 @@ func (a *App) showHelp() {
 		ovRow{text: "  Up/Down pick a match, Tab goes to it, Enter applies, Esc cancels.", style: "overlay.dim", item: -1},
 		ovRow{text: "  <C-r> reads the pattern as a regular expression (PCRE) instead.", style: "overlay.dim", item: -1},
 		ovRow{text: "  <C-p> and <C-n> recall patterns typed earlier.", style: "overlay.dim", item: -1},
-		ovRow{text: "  f and / match loosely; & ! and m match the text exactly as typed.", style: "overlay.dim", item: -1},
+		ovRow{text: "  Only f matches loosely; the rest match the text exactly as typed.", style: "overlay.dim", item: -1},
 		ovRow{text: "  f just goes there and leaves nothing behind; / also lights up", style: "overlay.dim", item: -1},
 		ovRow{text: "  every match for n and N. f carries on from the top of the file.", style: "overlay.dim", item: -1},
 		ovRow{text: "", item: -1},
