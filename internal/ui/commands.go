@@ -230,6 +230,12 @@ func (a *App) exec(cmd config.Command, count int64) {
 			return
 		}
 		a.openFinder(findSearch, "")
+	case "jump":
+		pattern := ""
+		if len(cmd.Args) == 1 {
+			pattern = cmd.Args[0]
+		}
+		a.openFinder(findJump, pattern)
 	case "search-next":
 		a.searchStep(false)
 	case "search-prev":

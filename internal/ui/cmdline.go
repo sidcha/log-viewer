@@ -36,7 +36,7 @@ var cmdAliases = map[string]string{
 	"edit":       "reload",
 	"e!":         "reload",
 	"h":          "help",
-	"f":          "follow-toggle",
+	"f":          "jump",
 	"follow":     "follow-toggle",
 	"n":          "search-next",
 	"N":          "search-prev",

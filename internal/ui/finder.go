@@ -29,6 +29,7 @@ const (
 	findNever
 	findHighlight
 	findSearch
+	findJump
 )
 
 func (k finderKind) String() string {
@@ -39,10 +40,20 @@ func (k finderKind) String() string {
 		return "never"
 	case findHighlight:
 		return "highlight"
+	case findJump:
+		return "jump"
 	default:
 		return "search"
 	}
 }
+
+// wraps reports whether running out of file means starting again from the top.
+//
+// Only the jump window does. The others are about the log ahead of you -- a
+// rule applies to the whole file however it was found, and a search has n and
+// N to carry on with -- but a jump is the one case where the line you want may
+// well be behind you, and there is nothing left over to reach it with.
+func (k finderKind) wraps() bool { return k == findJump }
 
 // rule returns the rule action this window commits, for the three that make one.
 func (k finderKind) rule() (filter.Action, bool) {
@@ -86,6 +97,8 @@ type finder struct {
 	scanning bool
 	atEnd    bool
 	from     int64 // where the next scan resumes
+	start    int64 // where this pattern's search began
+	wrapped  bool  // the search has carried on from the top of the file
 	scanned  int64
 	cancel   context.CancelFunc
 
@@ -106,8 +119,12 @@ type finder struct {
 const finderLookahead = 20
 
 // defaultMode is how a pattern is read before C-r is pressed.
+//
+// Reaching for a line is loose and a rule is exact: a search or a jump is a
+// half-remembered fragment, while a filter is written down and reread later,
+// so it had better mean what it says.
 func defaultMode(kind finderKind) filter.Mode {
-	if kind == findSearch {
+	if kind == findSearch || kind == findJump {
 		return filter.Fuzzy
 	}
 	return filter.Literal
@@ -161,9 +178,10 @@ func (a *App) restartFinder() {
 
 	f.gen++
 	f.rows, f.sel, f.top = f.rows[:0], 0, 0
-	f.scanning, f.atEnd, f.scanned = false, false, 0
+	f.scanning, f.atEnd, f.scanned, f.wrapped = false, false, 0, false
 	f.m, f.err = nil, nil
-	f.from = a.finderStart(f)
+	f.start = a.finderStart(f)
+	f.from = f.start
 
 	pattern := strings.TrimSpace(string(f.buf))
 	if pattern == "" {
@@ -243,20 +261,31 @@ func (a *App) scanFinder() {
 	m := f.m
 	skip := a.finderSkip(f)
 	src := a.finderSource(f)
+	// On the pass that came back round to the top, the line the search began
+	// at is where the candidates run out.
+	stopAt := int64(-1)
+	if f.wrapped {
+		stopAt = f.start
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	f.cancel = cancel
 
 	go func() {
 		var (
-			found   []finderRow
-			next    = from
-			scanned int64
-			full    bool
+			found     []finderRow
+			next      = from
+			scanned   int64
+			stopped   bool // gave up early: filled the window or was cancelled
+			exhausted bool // ran out of lines to offer
 		)
 		err := src.Iterate(from, func(i int64, ln view.Line) bool {
 			if ctx.Err() != nil {
-				full = true // not the end, just abandoned
+				stopped = true
+				return false
+			}
+			if stopAt >= 0 && i >= stopAt {
+				exhausted = true
 				return false
 			}
 			next = i + 1
@@ -270,12 +299,15 @@ func (a *App) scanFinder() {
 					text: append([]byte(nil), ln.Text...),
 				})
 				if have+len(found) >= want {
-					full = true
+					stopped = true
 					return false
 				}
 			}
 			return true
 		})
+		if !stopped && err == nil {
+			exhausted = true
+		}
 
 		a.postFn(func() {
 			cur := a.find
@@ -287,10 +319,22 @@ func (a *App) scanFinder() {
 			f.from = next
 			f.scanned += scanned
 			if err != nil {
+				// Reading failed; stop rather than asking again forever.
 				f.err = err
+				f.atEnd = true
+				return
 			}
-			f.atEnd = !full && err == nil
-			// Scrolling may have raised the target while this was in flight.
+			switch {
+			case !exhausted:
+				// Stopped short; there may well be more further on.
+			case f.kind.wraps() && !f.wrapped && f.start > 0:
+				f.wrapped = true
+				f.from = 0
+			default:
+				f.atEnd = true
+			}
+			// Scrolling may have raised the target while this was in flight,
+			// and a wrap leaves the rest of the file still to read.
 			a.scanFinder()
 		})
 		a.Wake()
@@ -496,6 +540,15 @@ func (a *App) commitFinder() {
 		return
 	}
 
+	if kind == findJump {
+		// A jump leaves nothing behind: no highlight to clear afterwards, and
+		// whatever n and N were stepping through is still theirs.
+		if num > 0 {
+			a.gotoSourceLine(num)
+		}
+		return
+	}
+
 	// A search: make it the pattern n and N step through, and go to the match
 	// that was highlighted.
 	a.doSearchAt(pattern, mode, num)
@@ -649,6 +702,9 @@ func (a *App) finderStatus() string {
 		return fmt.Sprintf("%s so far…", commas(int64(len(f.rows))))
 	case f.atEnd:
 		return fmt.Sprintf("%s found", commas(int64(len(f.rows))))
+	case f.wrapped:
+		// Say so, or a list that runs 4,812 then 31 looks like a bug.
+		return fmt.Sprintf("%s shown · wrapped", commas(int64(len(f.rows))))
 	default:
 		return fmt.Sprintf("%s shown", commas(int64(len(f.rows))))
 	}
@@ -658,11 +714,17 @@ func (a *App) finderEmptyNote() string {
 	f := a.find
 	if len(f.rows) == 0 {
 		if f.atEnd {
+			if f.kind.wraps() {
+				return "no matches anywhere in the file"
+			}
 			return "no matches below here"
 		}
 		return ""
 	}
 	if f.atEnd {
+		if f.wrapped {
+			return "— back where the search started —"
+		}
 		return "— end of file —"
 	}
 	return ""

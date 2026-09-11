@@ -81,6 +81,7 @@ be rebound independently.
 
 | | |
 |---|---|
+| `f` | fuzzy-find a line and go to it, leaving nothing behind |
 | `/` `?` | search forward / back — lists matches as you type |
 | `n` `N` | next / previous match |
 | `C-l` | drop the search highlight and repaint |
@@ -110,6 +111,7 @@ be rebound independently.
 
 ```
 :42               go to line 42
+:f timeout        fuzzy-find a line and go to it
 :$                go to the end
 :set wrap         toggle a setting; :set tab-width 4 to assign one
 :only ERROR       add a rule
@@ -221,11 +223,11 @@ for smart case.
 
 ### The match window
 
-`/`, `?`, `&`, `!` and `m` open a window across the bottom of the screen that
-lists the lines the pattern actually matches, updated as you type. The log above
-is left exactly as it was: nothing is filtered, dimmed or moved until you press
-<kbd>Enter</kbd>, so the window can be opened, typed into and abandoned without
-losing your place.
+`f`, `/`, `?`, `&`, `!` and `m` open a window across the bottom of the screen
+that lists the lines the pattern actually matches, updated as you type. The log
+above is left exactly as it was: nothing is filtered, dimmed or moved until you
+press <kbd>Enter</kbd>, so the window can be opened, typed into and abandoned
+without losing your place.
 
 | | |
 |---|---|
@@ -245,6 +247,22 @@ about lines that are currently hidden, which is precisely what an inline preview
 could never show. Rules already in force are summarised in the window's frame,
 and `=` opens the full list.
 
+### Going somewhere
+
+`f` is the same window used for nothing but navigation, the way fzf picks a
+file: type a fragment of the line you are after, pick it, and <kbd>Enter</kbd>
+moves the cursor there. It leaves *nothing* behind — no highlight to clear
+afterwards, and `n` and `N` carry on stepping through whatever you last searched
+for.
+
+It is also the one window that wraps. The others look ahead of you, because a
+rule applies to the whole file however it was found and a search has `n` to
+continue with; a jump has neither, and the line you want is as likely to be
+behind you. So `f` fills the window from below the cursor first, and when those
+run out carries on from the start of the file, stopping where it began. The
+frame says `wrapped` when it has come round, so a list running 4,812 then 31
+does not read as a bug.
+
 An unbalanced bracket says so while you type rather than after you commit. Over
 a very large log a filter is slow to undo, and a pattern that looked right often
 is not.
@@ -256,12 +274,12 @@ Three modes, chosen explicitly rather than guessed from the spelling:
 | | |
 |---|---|
 | **literal** | plain text; the default for `&`, `!` and `m` |
-| **fuzzy** | the characters in order with anything between; the default for `/` |
+| **fuzzy** | the characters in order with anything between; the default for `f` and `/` |
 | **regex** | [PCRE][pcre] — lookaround, backreferences, lazy quantifiers |
 
 A filter is saved, shared and reread months later, so it should mean exactly
-what it says: `a.b` matches `a.b`, not `axb`. A search is the opposite — you are
-reaching for a line you half remember, and `/erbd` should find
+what it says: `a.b` matches `a.b`, not `axb`. Finding a line is the opposite —
+you are reaching for something you half remember, and `ferbd` should land on
 `ERROR: bad descriptor`. <kbd>C-r</kbd> switches either to PCRE, which the window
 title shows, and the mode travels with the rule into the rules file.
 

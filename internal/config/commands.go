@@ -91,6 +91,7 @@ var Specs = []Spec{
 	{"search-word", "search", 0, 0, "search for the word under the cursor"},
 	{"search-word-back", "search", 0, 0, "search backwards for the word under the cursor"},
 	{"search-clear", "search", 0, 0, "drop the search highlight and repaint"},
+	{"jump", "search", 0, 1, "fuzzy-find a line and go to it, leaving no highlight"},
 
 	{"filter-only", "filter", 0, 1, "show only lines matching a pattern"},
 	{"filter-never", "filter", 0, 1, "never show lines matching a pattern"},

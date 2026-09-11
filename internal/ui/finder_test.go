@@ -428,6 +428,113 @@ func TestCommandLineRegexPrefix(t *testing.T) {
 	}
 }
 
+// TestJumpGoesThereAndLeavesNothingBehind: f is navigation, not a search, so
+// it must not disturb the highlight or what n and N are stepping through.
+func TestJumpGoesThereAndLeavesNothingBehind(t *testing.T) {
+	a, _ := newTestApp(t, numbered(200))
+	a.doSearch("ERROR", false)
+	before := a.search
+
+	f := openFinderWith(t, a, 'f', "line 150")
+	if len(f.rows) == 0 {
+		t.Fatal("no matches")
+	}
+	want := f.selected().num
+	a.key(tcell.NewEventKey(tcell.KeyEnter, '\r', tcell.ModNone))
+
+	if a.find != nil {
+		t.Error("Enter did not close the window")
+	}
+	if got := a.anchorSource() + 1; got != want {
+		t.Errorf("landed on line %d, want %d", got, want)
+	}
+	if a.search.pat != before.pat || a.search.m == nil {
+		t.Errorf("the jump replaced the search with %q", a.search.pat)
+	}
+	if a.rules.Len() != 0 {
+		t.Error("the jump left a rule behind")
+	}
+}
+
+// TestJumpIsFuzzy, because you are reaching for a line you half remember.
+func TestJumpIsFuzzy(t *testing.T) {
+	a, _ := newTestApp(t, numbered(60))
+
+	f := openFinderWith(t, a, 'f', "ERbd")
+	if f.mode != filter.Fuzzy {
+		t.Fatalf("jump mode = %v, want fuzzy", f.mode)
+	}
+	if len(f.rows) == 0 {
+		t.Error("a fuzzy jump should reach ERROR bad through the gaps")
+	}
+	for _, r := range f.rows {
+		if !strings.Contains(string(r.text), "ERROR bad") {
+			t.Errorf("matched an unrelated line: %q", r.text)
+		}
+	}
+}
+
+// TestJumpWrapsToTheTop: a jump is the one window where what you want may well
+// be behind you, and there is no n to carry on with.
+func TestJumpWrapsToTheTop(t *testing.T) {
+	a, _ := newTestApp(t, numbered(200))
+	a.gotoSourceLine(150)
+	a.draw()
+
+	// "line 007" is the eighth line: the text counts from zero.
+	f := openFinderWith(t, a, 'f', "line 007")
+	nums := rowNums(f)
+	if len(nums) != 1 || nums[0] != 8 {
+		t.Fatalf("matches = %v, want line 8 from above the cursor", nums)
+	}
+	if !f.wrapped {
+		t.Error("the search did not record that it came round again")
+	}
+
+	a.key(tcell.NewEventKey(tcell.KeyEnter, '\r', tcell.ModNone))
+	if got := a.anchorSource() + 1; got != 8 {
+		t.Errorf("landed on line %d, want 8", got)
+	}
+}
+
+// TestJumpPrefersWhatIsAhead: wrapping is a fallback, not the starting point.
+func TestJumpPrefersWhatIsAhead(t *testing.T) {
+	a, _ := newTestApp(t, numbered(400))
+	a.gotoSourceLine(200)
+	a.draw()
+
+	f := openFinderWith(t, a, 'f', "ERROR")
+	nums := rowNums(f)
+	if len(nums) == 0 {
+		t.Fatal("no matches")
+	}
+	if nums[0] < 200 {
+		t.Errorf("first match is line %d, above the cursor at 200", nums[0])
+	}
+	if f.wrapped {
+		t.Error("wrapped while there were still matches ahead")
+	}
+}
+
+// TestJumpStopsWhereItStarted rather than going round for ever.
+func TestJumpStopsWhereItStarted(t *testing.T) {
+	a, _ := newTestApp(t, numbered(300))
+	a.gotoSourceLine(150)
+	a.draw()
+
+	f := openFinderWith(t, a, 'f', "nothing matches this")
+	if !f.atEnd {
+		t.Fatal("the search did not finish")
+	}
+	if len(f.rows) != 0 {
+		t.Fatalf("matched %d lines, want none", len(f.rows))
+	}
+	// The whole file, read once: no line is offered twice.
+	if f.scanned > 300 {
+		t.Errorf("read %d lines of a 300-line file", f.scanned)
+	}
+}
+
 // TestFinderArrowsMoveTheSelection, which is what the list is for.
 func TestFinderArrowsMoveTheSelection(t *testing.T) {
 	a, _ := newTestApp(t, numbered(200))
