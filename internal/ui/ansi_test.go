@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/sidcha/log-viewer/internal/filter"
+	"github.com/sidcha/log-viewer/internal/highlight"
 )
 
 // TestEscapesTakeNoColumns is what "the file opens correctly" means: the text
@@ -78,6 +80,55 @@ func TestANSIOffLeavesTheTextAlone(t *testing.T) {
 	// The escapes are still hidden: they are not text under any setting.
 	if got := strings.TrimRight(rowText(scr, 0), " "); got != "plain red plain" {
 		t.Errorf("row 0 = %q", got)
+	}
+}
+
+// TestTheLineSColoursWinOverTheSyntaxProfile: lv's profile is a guess at the
+// shape of the line, and the producer's colours are not a guess. Where the two
+// cover the same bytes, what the file says wins.
+//
+// The profile here is built for the test rather than taken from the shipped
+// ones, whose rules mostly stop matching next to an escape sequence at all:
+// they are written with \b, and the m that ends a colour sequence is a word
+// character, so \bERROR does not match [35mERROR.
+func TestTheLineSColoursWinOverTheSyntaxProfile(t *testing.T) {
+	a, scr := newTestApp(t, "plain \x1b[35mthing\x1b[0m\n")
+	syntax := tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	a.eng.Profile = &highlight.Profile{
+		Name:  "test",
+		Rules: []highlight.Rule{{Re: regexp.MustCompile(`thing`), Style: syntax}},
+	}
+	a.draw()
+
+	st := rowStyles(scr, 0)
+	if got := fg(st[0]); got == tcell.PaletteColor(5) {
+		t.Error("the colour reached text the line never coloured")
+	}
+	if got := fg(st[6]); got != tcell.PaletteColor(5) {
+		t.Errorf("the coloured word is %v, want the magenta the line asked for", got)
+	}
+}
+
+// TestTheSyntaxProfileKeepsWhatTheColoursDoNotCover, so a line the producer
+// coloured only in part is not left half styled.
+func TestTheSyntaxProfileKeepsWhatTheColoursDoNotCover(t *testing.T) {
+	a, scr := newTestApp(t, "plain \x1b[35mthing\x1b[0m\n")
+	syntax := tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	a.eng.Profile = &highlight.Profile{
+		Name: "test",
+		Rules: []highlight.Rule{
+			{Re: regexp.MustCompile(`plain`), Style: syntax},
+			{Re: regexp.MustCompile(`thing`), Style: syntax},
+		},
+	}
+	a.draw()
+
+	st := rowStyles(scr, 0)
+	if got := fg(st[0]); got != tcell.ColorGreen {
+		t.Errorf("the uncoloured word is %v, want the profile's green", got)
+	}
+	if got := fg(st[6]); got != tcell.PaletteColor(5) {
+		t.Errorf("the coloured word is %v, want magenta", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -91,34 +92,52 @@ func TestBackwardSearchStepsBackward(t *testing.T) {
 }
 
 // TestSearchWrapsAtTheEnd so n can reach what the window listed.
+//
+// The cursor is parked at the last line, not at the match it would wrap to:
+// landing on line 1 has to be something the wrap did, not somewhere we were
+// already sitting.
 func TestSearchWrapsAtTheEnd(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	a.doSearch("ERROR", false)
 	waitSearch(t, a)
-	// Walked all the way down: the next match is past the end of the file.
-	a.search.cur = a.base.Len() - 1
+
+	last := a.base.Len() - 1
+	a.setCursor(last)
+	a.search.cur = last // walked down past the last match
 	a.draw()
+	if got := a.anchorSource() + 1; got != last+1 {
+		t.Fatalf("setup put the cursor on line %d, want %d", got, last+1)
+	}
 
 	run(a, "search-next")
 	waitSearch(t, a)
-	if got := a.anchorSource() + 1; got > 10 {
-		t.Errorf("n from the end landed on line %d, want it wrapped to the top", got)
+
+	if got := a.anchorSource() + 1; got != 1 {
+		t.Errorf("n from the end landed on line %d, want the first match at 1", got)
 	}
-	if a.msg == "" {
-		t.Error("wrapping said nothing; it has to be visible that the position jumped")
+	if !strings.Contains(a.msg, "continuing at the start") {
+		t.Errorf("wrapping reported %q; it has to be visible that the position jumped", a.msg)
 	}
 }
 
 func TestSearchWrapsAtTheStart(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	a.doSearch("ERROR", false)
+	waitSearch(t, a)
+
 	a.setCursor(0)
+	a.search.cur = 0
 	a.draw()
 
 	run(a, "search-prev")
 	waitSearch(t, a)
-	if got := a.anchorSource() + 1; got < 50 {
-		t.Errorf("N from the top landed on line %d, want it wrapped to the end", got)
+
+	// The last ERROR line of numbered(60).
+	if got := a.anchorSource() + 1; got != 58 {
+		t.Errorf("N from the top landed on line %d, want the last match at 58", got)
+	}
+	if !strings.Contains(a.msg, "continuing at the end") {
+		t.Errorf("wrapping reported %q", a.msg)
 	}
 }
 
