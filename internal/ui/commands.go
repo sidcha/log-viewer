@@ -195,6 +195,7 @@ func (a *App) exec(cmd config.Command, count int64) {
 	case "follow-toggle":
 		a.follow = !a.follow
 		if a.follow {
+			a.everFollowed = true
 			a.gotoEnd()
 			a.infof("following %s", shortName(a.src.Name()))
 		} else {

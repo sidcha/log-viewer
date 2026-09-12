@@ -60,8 +60,26 @@ func (a *App) streamAtRisk() bool {
 	return a.src.IsStdin() && !a.streamSaved && a.base.Len() > 0
 }
 
+// askAboutStream decides whether losing the input is worth a question.
+//
+// On auto, the answer is whether lv was ever following it. Following a pipe is
+// how you watch something happen -- a boot, a build, a device talking -- and
+// that is a capture: it exists nowhere else and cannot be produced again by
+// asking nicely. Paging the output of a command is not, and a pager that
+// stopped to ask on the way out of `git log` would be intolerable.
+func (a *App) askAboutStream() bool {
+	switch a.cfg.Str("ask-save") {
+	case "on":
+		return true
+	case "off":
+		return false
+	default:
+		return a.everFollowed
+	}
+}
+
 func (a *App) askSaveStream(next func()) {
-	if !a.streamAtRisk() || !a.cfg.Bool("ask-save") {
+	if !a.streamAtRisk() || !a.askAboutStream() {
 		next()
 		return
 	}

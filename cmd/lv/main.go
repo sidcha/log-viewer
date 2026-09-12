@@ -162,10 +162,12 @@ func run() int {
 	}
 	defer src.Close()
 
-	// A pipe has no history to explore: the interesting end is the one still
-	// being written. Follow it unless someone has said otherwise.
-	if src.IsStdin() && !opt.follow && cfg.Origin("follow") == config.Builtin.String() {
-		_ = cfg.Set("follow", "on")
+	// Piped input opens at the top, the way every pager does, so lv can be
+	// one: `git config core.pager lv`, MANPAGER, anything that pipes. Landing
+	// at the end of `git log` shows the oldest commit first, which is not what
+	// anyone asked for. Tailing a stream is what -f is for.
+	if src.IsStdin() {
+		applyPagerDefaults(cfg)
 	}
 
 	prof, err := pickProfile(cfg, src, opt.profile)
@@ -281,6 +283,15 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 
 	idx := index.New(int64(cfg.Int("index-stride")), cfg.Int("max-checkpoints"))
 
+	if cfg.Bool("quit-if-one-screen") {
+		if done, err := dumpIfItFits(cfg, src); done || err != nil {
+			return err
+		}
+	}
+	if !cfg.Bool("alt-screen") {
+		leaveOnScreen()
+	}
+
 	scr, err := newScreen()
 	if err != nil {
 		return err
@@ -337,6 +348,20 @@ func newWatcher(cfg *config.Config, src *source.Source) *watch.Watcher {
 	})
 }
 
+// leaveOnScreen keeps what was drawn on the terminal after lv exits, instead
+// of restoring whatever was there before.
+//
+// It is what less does under -X, which is why git asks for LESS=FRX: the point
+// of paging `git log` is usually to read a hash or a message and then use it,
+// and a pager that wipes it the moment you press q makes you run the command
+// again. The alternate screen is still right for opening a file to work in, so
+// this is a setting rather than a rule.
+//
+// tcell has no API for it, but it honours the environment variable.
+func leaveOnScreen() {
+	_ = os.Setenv("TCELL_ALTSCREEN", "disable")
+}
+
 // newScreen builds a screen driven by the controlling terminal rather than
 // stdin, so `producer | lv` still receives key presses.
 func newScreen() (tcell.Screen, error) {
@@ -362,6 +387,19 @@ func openSource(args []string) (*source.Source, error) {
 			return nil, fmt.Errorf("no input: give a file, or pipe one in")
 		}
 		return source.FromStdin()
+	}
+}
+
+// applyPagerDefaults adjusts the settings that should differ when lv is
+// reading someone else's output rather than a file someone opened.
+//
+// Only defaults are touched: anything the user set in a config file or on the
+// command line has already been recorded with an origin, and keeps it.
+func applyPagerDefaults(cfg *config.Config) {
+	// A piped document is finite and short far more often than not, so behave
+	// the way less does under git's LESS=FRX: if it fits, print it and go.
+	if cfg.Origin("quit-if-one-screen") == config.Builtin.String() {
+		_ = cfg.Set("quit-if-one-screen", "on")
 	}
 }
 
@@ -436,7 +474,7 @@ usage:
 options:
   -c, --config PATH      read this configuration file
       --no-config        ignore user configuration
-  -f, --follow           start pinned to the end of the file (default when piped)
+  -f, --follow           start pinned to the end, and stay there as it grows
   -w, --wrap             wrap long lines
   -n, --line-numbers     show a line-number gutter
   -p, --profile NAME     force a syntax profile ("none" disables highlighting)

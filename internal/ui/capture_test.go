@@ -45,6 +45,18 @@ func newPipedApp(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 	return newAppOver(t, src, "(stdin)", content)
 }
 
+// newWatchedPipe is the capture case: lv was following the input as it
+// arrived, which is what makes it worth asking about on the way out.
+func newWatchedPipe(t *testing.T, content string) (*App, tcell.SimulationScreen) {
+	t.Helper()
+	a, scr := newPipedApp(t, content)
+	run(a, "follow-toggle")
+	if !a.everFollowed {
+		t.Fatal("follow-toggle did not start following")
+	}
+	return a, scr
+}
+
 func quitAndAnswer(t *testing.T, a *App, answers string) {
 	t.Helper()
 	run(a, "quit")
@@ -59,7 +71,7 @@ func quitAndAnswer(t *testing.T, a *App, answers string) {
 // TestPipedInputIsNotThrownAwaySilently. The spool is unlinked the moment it
 // is opened, so quitting is the last chance anything has to keep it.
 func TestPipedInputAsksBeforeQuitting(t *testing.T) {
-	a, _ := newPipedApp(t, numbered(40))
+	a, _ := newWatchedPipe(t, numbered(40))
 
 	run(a, "quit")
 	if a.confirm == nil {
@@ -77,7 +89,7 @@ func TestPipedInputAsksBeforeQuitting(t *testing.T) {
 
 func TestPipedInputSavesThenQuits(t *testing.T) {
 	content := numbered(40)
-	a, _ := newPipedApp(t, content)
+	a, _ := newWatchedPipe(t, content)
 	path := filepath.Join(t.TempDir(), "capture.log")
 
 	quitAndAnswer(t, a, "y")
@@ -115,7 +127,7 @@ func TestPipedInputSavesThenQuits(t *testing.T) {
 // losing the input, so answering it with a subset would be a trap.
 func TestPipedSaveWritesEverythingNotTheFilteredView(t *testing.T) {
 	content := numbered(60)
-	a, _ := newPipedApp(t, content)
+	a, _ := newWatchedPipe(t, content)
 	a.runCommandLine("only ERROR")
 	waitFiltered(t, a)
 	if a.viewLen() >= a.base.Len() {
@@ -172,8 +184,52 @@ func TestSavingAFilteredViewDoesNotCount(t *testing.T) {
 	}
 }
 
-func TestAskSaveOffQuitsStraightAway(t *testing.T) {
+// TestPagingAPipeQuitsWithoutAsking. lv has to be usable as git's pager, and a
+// pager that stopped to ask a question on the way out of `git log` would be
+// intolerable. The output of a command can be produced again by running it;
+// what was watched arriving cannot.
+func TestPagingAPipeQuitsWithoutAsking(t *testing.T) {
 	a, _ := newPipedApp(t, numbered(40))
+
+	run(a, "quit")
+	if a.confirm != nil {
+		t.Errorf("paging a pipe asked %q", a.confirm.text)
+	}
+	if !a.quit {
+		t.Error("did not quit")
+	}
+}
+
+// TestAskSaveOnAsksEvenWhenPaging, for anyone who wants the old behaviour back.
+func TestAskSaveOnAsksEvenWhenPaging(t *testing.T) {
+	a, _ := newPipedApp(t, numbered(40))
+	if err := a.cfg.Set("ask-save", "on"); err != nil {
+		t.Fatal(err)
+	}
+
+	run(a, "quit")
+	if a.confirm == nil {
+		t.Fatal("ask-save on did not ask")
+	}
+}
+
+// TestFollowingIsRememberedAfterItStops: turning follow off to scroll back
+// through what was captured does not make the capture worthless.
+func TestFollowingIsRememberedAfterItStops(t *testing.T) {
+	a, _ := newWatchedPipe(t, numbered(40))
+	run(a, "follow-toggle")
+	if a.follow {
+		t.Fatal("follow is still on")
+	}
+
+	run(a, "quit")
+	if a.confirm == nil {
+		t.Error("a capture stopped being worth asking about the moment follow was turned off")
+	}
+}
+
+func TestAskSaveOffQuitsStraightAway(t *testing.T) {
+	a, _ := newWatchedPipe(t, numbered(40))
 	if err := a.cfg.Set("ask-save", "off"); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +278,7 @@ func TestAFileIsNeverAtRisk(t *testing.T) {
 // TestBothQuestionsAreAsked when there is both a rule set and a capture to
 // lose, and the session only ends once both are settled.
 func TestBothQuestionsAreAsked(t *testing.T) {
-	a, _ := newPipedApp(t, numbered(40))
+	a, _ := newWatchedPipe(t, numbered(40))
 	a.runCommandLine("only ERROR")
 	waitFiltered(t, a)
 
@@ -246,7 +302,7 @@ func TestBothQuestionsAreAsked(t *testing.T) {
 // TestEveryAnswerFitsOnTheRow: a question whose choices are cut off the right
 // edge cannot be answered by anyone who has not read the source.
 func TestEveryAnswerFitsOnTheRow(t *testing.T) {
-	a, scr := newPipedApp(t, numbered(40))
+	a, scr := newWatchedPipe(t, numbered(40))
 	// A rules file with a name long enough to crowd the row out on its own.
 	a.rulesPath = filepath.Join(t.TempDir(), strings.Repeat("long-", 12)+"rules.json")
 	a.runCommandLine("only ERROR")

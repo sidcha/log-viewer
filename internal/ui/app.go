@@ -75,8 +75,10 @@ type App struct {
 	rulesPath   string
 	savedDigest string
 	// streamSaved records that piped input has been written somewhere that
-	// outlives the process.
-	streamSaved bool
+	// outlives the process, and everFollowed that this session was watching
+	// the input arrive rather than reading through it.
+	streamSaved  bool
+	everFollowed bool
 
 	// A position request that cannot be honoured until the filter scan has
 	// reached the relevant part of the file.
@@ -137,23 +139,24 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 	maxLine := cfg.Int("max-line-bytes")
 
 	a := &App{
-		scr:      scr,
-		cfg:      cfg,
-		src:      src,
-		idx:      idx,
-		base:     view.NewBase(src, idx, block, maxLine),
-		rules:    filter.NewSet(),
-		eng:      highlight.NewEngine(cfg.Int("max-scan-bytes"), 64),
-		lay:      newLayout(cfg.Int("tab-width")),
-		follow:   cfg.Bool("follow"),
-		wrap:     cfg.Bool("wrap"),
-		lineNums: cfg.Bool("line-numbers"),
-		ansi:     cfg.Bool("ansi"),
-		statusOn: cfg.Str("status-line"),
-		post:     make(chan func(), 32),
-		wake:     make(chan struct{}, 1),
-		done:     make(chan struct{}),
-		lastAct:  time.Now(),
+		scr:          scr,
+		cfg:          cfg,
+		src:          src,
+		idx:          idx,
+		base:         view.NewBase(src, idx, block, maxLine),
+		rules:        filter.NewSet(),
+		eng:          highlight.NewEngine(cfg.Int("max-scan-bytes"), 64),
+		lay:          newLayout(cfg.Int("tab-width")),
+		follow:       cfg.Bool("follow"),
+		everFollowed: cfg.Bool("follow"),
+		wrap:         cfg.Bool("wrap"),
+		lineNums:     cfg.Bool("line-numbers"),
+		ansi:         cfg.Bool("ansi"),
+		statusOn:     cfg.Str("status-line"),
+		post:         make(chan func(), 32),
+		wake:         make(chan struct{}, 1),
+		done:         make(chan struct{}),
+		lastAct:      time.Now(),
 	}
 	a.eng.Profile = profile
 	a.search.cur = -1

@@ -148,6 +148,12 @@ func (l *layout) cellRange(start, end int) (int, int) {
 // cols is the number of columns the laid-out line occupies.
 func (l *layout) cols() int { return len(l.cells) }
 
+// DisplayWidth is how many columns a line occupies once drawn, which is not
+// its length: tabs expand, escape sequences take no columns, and a wide rune
+// takes two. Deciding whether a file fits on one screen needs the renderer's
+// own answer rather than an approximation of it.
+func DisplayWidth(text []byte, tab int) int { return displayColumn(text, len(text), tab) }
+
 // displayColumn is the terminal column a byte offset falls on, applying the
 // same tab and width rules as build without laying the line out.
 func displayColumn(text []byte, byteOff, tab int) int {
