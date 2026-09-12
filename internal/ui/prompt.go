@@ -18,6 +18,7 @@ type promptKind int
 
 const (
 	pSave promptKind = iota
+	pSaveStream
 	pSaveRules
 	pLoadRules
 	pGotoLine
@@ -69,9 +70,7 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 		}
 		kind, then := p.kind, p.then
 		a.closePrompt()
-		if a.acceptPrompt(kind, text) && then != nil {
-			then()
-		}
+		a.acceptPrompt(kind, text, then)
 		return
 
 	case tcell.KeyEscape, tcell.KeyCtrlG:
@@ -247,20 +246,29 @@ func (a *App) drawPrompt(row, w int) {
 	a.scr.ShowCursor(cx, row)
 }
 
-// acceptPrompt performs the action the prompt was opened for, reporting
-// whether it succeeded so a follow-up action knows not to run.
-func (a *App) acceptPrompt(kind promptKind, text string) bool {
+// acceptPrompt performs the action the prompt was opened for.
+//
+// then is what the prompt was opened on behalf of -- quitting, in every case
+// so far -- and each action decides when it has earned it. A write runs in the
+// background, so it must not be until the bytes are on disk: quitting the
+// moment a path was typed would lose exactly what was being saved.
+func (a *App) acceptPrompt(kind promptKind, text string, then func()) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
-		return false
+		return
 	}
 
 	switch kind {
 	case pSave:
-		a.startSave(trimmed)
+		a.startSaveView(a.activeView(), expandPath(trimmed), then)
+
+	case pSaveStream:
+		a.startSaveView(a.base, expandPath(trimmed), then)
 
 	case pSaveRules:
-		return a.saveRules(expandPath(trimmed))
+		if a.saveRules(expandPath(trimmed)) && then != nil {
+			then()
+		}
 
 	case pLoadRules:
 		a.loadRulesAt(expandPath(trimmed))
@@ -269,14 +277,13 @@ func (a *App) acceptPrompt(kind promptKind, text string) bool {
 		n, err := strconv.ParseInt(trimmed, 10, 64)
 		if err != nil {
 			a.errorf("not a line number: %s", trimmed)
-			return false
+			return
 		}
 		a.gotoSourceLine(n)
 
 	case pCommand:
 		a.runCommandLine(trimmed)
 	}
-	return true
 }
 
 // expandPath resolves a leading ~ so a path typed at the prompt behaves the

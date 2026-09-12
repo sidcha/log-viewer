@@ -4,6 +4,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/sidcha/log-viewer/internal/ansi"
 )
 
 // layout converts a raw log line into terminal cells.
@@ -56,15 +57,22 @@ func (l *layout) build(text []byte, maxCols int) {
 			i++
 			continue
 
-		case c == 0x1b && i+1 < len(text) && text[i+1] == '[':
-			// Hide CSI sequences rather than rendering them as noise. lv styles
-			// lines itself; a log that carries its own colours would otherwise
-			// show escape gibberish in every line.
-			if j, ok := skipCSI(text, i); ok {
+		case c == 0x1b:
+			// Escape sequences occupy no columns. Drawn literally they are
+			// noise, and counted as columns they push the rest of the line out
+			// of alignment; the colours among them are put back by the
+			// renderer.
+			if j, ok := ansi.Skip(text, i); ok {
 				i = j
 				continue
 			}
 			l.push('·', 1, i)
+			i++
+			continue
+
+		case c == '\r' && i == len(text)-1:
+			// A line that arrived over a serial link keeps its carriage
+			// return. It is the line ending, not content, so it gets no cell.
 			i++
 			continue
 
@@ -140,21 +148,6 @@ func (l *layout) cellRange(start, end int) (int, int) {
 // cols is the number of columns the laid-out line occupies.
 func (l *layout) cols() int { return len(l.cells) }
 
-// skipCSI returns the index just past a CSI escape sequence starting at i.
-func skipCSI(text []byte, i int) (int, bool) {
-	j := i + 2
-	for j < len(text) && text[j] >= 0x30 && text[j] <= 0x3f {
-		j++
-	}
-	for j < len(text) && text[j] >= 0x20 && text[j] <= 0x2f {
-		j++
-	}
-	if j < len(text) && text[j] >= 0x40 && text[j] <= 0x7e {
-		return j + 1, true
-	}
-	return i, false
-}
-
 // displayColumn is the terminal column a byte offset falls on, applying the
 // same tab and width rules as build without laying the line out.
 func displayColumn(text []byte, byteOff, tab int) int {
@@ -168,12 +161,14 @@ func displayColumn(text []byte, byteOff, tab int) int {
 		case c == '\t':
 			col += tab - (col % tab)
 			i++
-		case c == 0x1b && i+1 < len(text) && text[i+1] == '[':
-			if j, ok := skipCSI(text, i); ok {
+		case c == 0x1b:
+			if j, ok := ansi.Skip(text, i); ok {
 				i = j
 				continue
 			}
 			col++
+			i++
+		case c == '\r' && i == len(text)-1:
 			i++
 		case c < 0x20 || c == 0x7f || c < 0x80:
 			col++

@@ -416,6 +416,38 @@ application logs), `json` line-delimited records, and a `generic` fallback. The
 profile is chosen by filename glob, then by sniffing the head of the file;
 `-p NAME` forces one and `-p none` turns it off.
 
+### Logs that bring their own colours
+
+A log captured from a serial console, a build, or anything else that writes to
+a tty arrives with its escape sequences still in it. Those bytes are not text:
+drawn literally they are noise, and counted as columns they push the whole line
+out of alignment — so every escape sequence `lv` recognises takes no columns at
+all, whether it is colour, a cursor move, or a window title.
+
+The colour ones are put back as colour, so the file looks the way it did when
+it was produced. Four layers decide a character's appearance, each overriding
+the one before:
+
+1. `lv`'s syntax profile — its guess at the shape of the line;
+2. the colours the line was written with;
+3. the rules you added;
+4. the search.
+
+So a log that is painted end to end does not hide what you are hunting for, and
+a line the producer coloured only in part keeps `lv`'s timestamp colouring
+across the rest. A sequence that asks only for bold has said nothing about
+colour, so it adds to what is there rather than replacing it.
+
+`lv config ansi off` goes back to ignoring them. They stay hidden either way —
+they are not text under any setting.
+
+Two limits worth knowing. Colour state does not carry across a line break:
+jumping into the middle of a 100 GB file would otherwise mean reading
+everything above it to find out what colour the line starts in. And a carriage
+return is dropped only at the end of a line, where it is the line ending;
+inside a line it stays visible as `·` rather than being emulated, so text that
+never appeared together is not silently run together.
+
 ## How it stays small
 
 | | |
@@ -480,6 +512,29 @@ saving work on piped input exactly as they do on a file, and nothing is left
 behind when `lv` exits. Reading a pipe starts in follow mode, since a stream
 has no history to explore and the interesting end is the one still being
 written; `F` or `:set follow off` stops it, as does any upward motion.
+
+Because nothing is left behind, quitting asks:
+
+```
+Piped input is not on disk. Keep it?   (y) save all…  (n) discard  (c) cancel
+```
+
+The spool is unlinked the moment it is opened, so when the process ends the
+capture ends with it — and whatever produced it has long since moved on. `y`
+writes **all** of the input, not the filtered view `:w` writes: the question
+was about losing the input, and answering it with a subset would be a trap.
+Saving the whole thing during the session, with `S` or `:w` and no filter in
+force, settles the question in advance.
+
+Both quit questions can be turned off for a workflow that pipes a log through
+`lv` to glance at it:
+
+```sh
+lv config ask-save off          # never ask about piped input
+lv config ask-save-rules off    # never ask about the rules either
+```
+
+`ZQ` and `:q!` skip both regardless.
 
 ## Testing
 

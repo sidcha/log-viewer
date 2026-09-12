@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"path/filepath"
-
 	"github.com/sidcha/log-viewer/internal/ruleset"
 )
 
@@ -88,39 +86,4 @@ func (a *App) promptSaveRules(after func()) {
 		a.prompt.buf = []rune(a.rulesPath)
 		a.prompt.cur = len(a.prompt.buf)
 	}
-}
-
-// requestQuit is the quit command. It leaves without a word when there is
-// nothing to lose, and otherwise asks once.
-func (a *App) requestQuit() {
-	if !a.rulesDirty() {
-		a.quit = true
-		return
-	}
-
-	if a.rulesPath != "" {
-		a.ask("Rules changed. Update "+filepath.Base(a.rulesPath)+"?",
-			nil,
-			choice{'y', "update", func() {
-				if a.saveRules(a.rulesPath) {
-					a.quit = true
-				}
-			}},
-			choice{'n', "discard", func() { a.quit = true }},
-			choice{'a', "save as…", func() {
-				a.promptSaveRules(func() { a.quit = true })
-			}},
-			choice{'c', "cancel", nil},
-		)
-		return
-	}
-
-	a.ask("Save rules before quitting?",
-		nil,
-		choice{'y', "save as…", func() {
-			a.promptSaveRules(func() { a.quit = true })
-		}},
-		choice{'n', "discard", func() { a.quit = true }},
-		choice{'c', "cancel", nil},
-	)
 }

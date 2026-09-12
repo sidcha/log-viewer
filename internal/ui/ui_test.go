@@ -33,6 +33,13 @@ func newTestApp(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { src.Close() })
+	return newAppOver(t, src, path, content)
+}
+
+// newAppOver builds the viewer over an already-open source, so a test can
+// supply a pipe instead of a file.
+func newAppOver(t *testing.T, src *source.Source, path, content string) (*App, tcell.SimulationScreen) {
+	t.Helper()
 
 	cfg, err := config.Load(config.LoadOptions{NoUser: true})
 	if err != nil {

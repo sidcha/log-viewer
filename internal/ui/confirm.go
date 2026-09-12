@@ -76,15 +76,37 @@ func (a *App) drawConfirm(row, w int) {
 	c := a.confirm
 	st := a.cfg.Style("prompt")
 
-	var b strings.Builder
-	b.WriteString(" ")
-	b.WriteString(c.text)
+	var answers strings.Builder
 	for _, ch := range c.choices {
-		b.WriteString("   (")
-		b.WriteRune(ch.key)
-		b.WriteString(") ")
-		b.WriteString(ch.label)
+		answers.WriteString("   (")
+		answers.WriteRune(ch.key)
+		answers.WriteString(") ")
+		answers.WriteString(ch.label)
 	}
-	a.fillRow(row, b.String(), st)
+
+	// The answers are the part that has to be readable: a question with its
+	// choices cut off the right edge is unanswerable. A long file name in the
+	// question gives way to them instead.
+	text := c.text
+	if room := w - 1 - len([]rune(answers.String())); room < len([]rune(text)) {
+		text = ellipsis(text, room)
+	}
+
+	a.fillRow(row, " "+text+answers.String(), st)
 	a.scr.HideCursor()
+}
+
+// ellipsis shortens s to at most n columns, marking that it was cut.
+func ellipsis(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n == 1 {
+		return "…"
+	}
+	return string(r[:n-1]) + "…"
 }

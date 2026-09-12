@@ -322,6 +322,7 @@ func (a *App) setBool(name string, value bool) {
 func (a *App) syncSettings() {
 	a.wrap = a.cfg.Bool("wrap")
 	a.lineNums = a.cfg.Bool("line-numbers")
+	a.ansi = a.cfg.Bool("ansi")
 	a.follow = a.cfg.Bool("follow") || a.follow
 	if a.wrap {
 		a.hoff = 0
@@ -678,13 +679,20 @@ func (a *App) startSearch(from int64, back bool) {
 // ------------------------------------------------------------------- export
 
 func (a *App) startSave(path string) {
+	a.startSaveView(a.activeView(), path, nil)
+}
+
+// startSaveView writes v to path in the background, running then once the
+// bytes are there. A failed or cancelled write does not run it: whatever it
+// was waiting to do, it was waiting for the file to exist.
+func (a *App) startSaveView(v view.View, path string, then func()) {
 	a.cancelBusy()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	op := &busyOp{what: "saving to " + path, cancel: cancel}
 	a.busy = op
 
-	v := a.activeView()
+	whole := v == view.View(a.base)
 	src := a.src
 
 	go func() {
@@ -703,7 +711,15 @@ func (a *App) startSave(path string) {
 			case err != nil:
 				a.errorf("save: %v", err)
 			default:
+				if whole {
+					// Everything that was read is now somewhere that outlives
+					// this process, so quitting has nothing left to warn about.
+					a.streamSaved = true
+				}
 				a.infof("wrote %s lines (%s) to %s", commas(p.Lines), humanBytes(p.Bytes), path)
+				if then != nil {
+					then()
+				}
 			}
 		})
 	}()

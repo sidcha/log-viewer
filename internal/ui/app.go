@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/ansi"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
@@ -59,6 +60,7 @@ type App struct {
 	wrap     bool
 	lineNums bool
 	bypass   bool
+	ansi     bool
 	statusOn string
 
 	search  searchState
@@ -72,6 +74,9 @@ type App struct {
 	// so quitting knows whether there is anything to lose.
 	rulesPath   string
 	savedDigest string
+	// streamSaved records that piped input has been written somewhere that
+	// outlives the process.
+	streamSaved bool
 
 	// A position request that cannot be honoured until the filter scan has
 	// reached the relevant part of the file.
@@ -91,11 +96,12 @@ type App struct {
 	linebuf []byte
 	// walkbuf belongs to the word motions, which read lines other than the
 	// one being drawn.
-	walkbuf []byte
-	styles  []tcell.Style
-	locs    [][2]int
-	rows    int
-	cols    int
+	walkbuf   []byte
+	styles    []tcell.Style
+	locs      [][2]int
+	ansiSpans []ansi.Span
+	rows      int
+	cols      int
 	// where the cursor column landed on screen this frame, or -1
 	curX int
 	curY int
@@ -142,6 +148,7 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 		follow:   cfg.Bool("follow"),
 		wrap:     cfg.Bool("wrap"),
 		lineNums: cfg.Bool("line-numbers"),
+		ansi:     cfg.Bool("ansi"),
 		statusOn: cfg.Str("status-line"),
 		post:     make(chan func(), 32),
 		wake:     make(chan struct{}, 1),

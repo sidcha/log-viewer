@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/ansi"
 	"github.com/sidcha/log-viewer/internal/filter"
+	"github.com/sidcha/log-viewer/internal/highlight"
 	"github.com/sidcha/log-viewer/internal/view"
 )
 
@@ -210,18 +212,17 @@ func (a *App) flatStyles(st tcell.Style) {
 	}
 }
 
-// applyStyles paints the style array for the laid-out line: syntax profile
-// first, then rule marks, then search matches, then the pattern being typed.
+// applyStyles paints the style array for the laid-out line, in the order of
+// who gets the last word: lv's guess at the shape of the line, then the
+// colours the line was written with, then the rules the user added, then the
+// search.
 func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 	a.flatStyles(base)
 	n := a.lay.cols()
 
-	for _, sp := range a.eng.Spans(text) {
-		cs, ce := a.lay.cellRange(sp.Start, sp.End)
-		for k := cs; k < ce && k < n; k++ {
-			a.styles[k] = sp.Style
-		}
-	}
+	a.paintSpans(a.eng.SyntaxSpans(text), n)
+	a.paintANSI(text, n)
+	a.paintSpans(a.eng.MarkSpans(text), n)
 
 	if a.search.m != nil {
 		st := a.cfg.Style("match")
@@ -231,6 +232,33 @@ func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 		a.paint(a.search.m, text, st, n)
 	}
 
+}
+
+func (a *App) paintSpans(spans []highlight.Span, n int) {
+	for _, sp := range spans {
+		cs, ce := a.lay.cellRange(sp.Start, sp.End)
+		for k := cs; k < ce && k < n; k++ {
+			a.styles[k] = sp.Style
+		}
+	}
+}
+
+// paintANSI puts back the colours the line arrived with.
+//
+// They are laid over what is already there rather than replacing it, because a
+// sequence that asks only for bold has said nothing about colour, and the
+// bytes it does not cover keep whatever lv decided for them.
+func (a *App) paintANSI(text []byte, n int) {
+	if !a.ansi {
+		return
+	}
+	a.ansiSpans = ansi.Spans(text, a.ansiSpans[:0])
+	for _, sp := range a.ansiSpans {
+		cs, ce := a.lay.cellRange(sp.Start, sp.End)
+		for k := cs; k < ce && k < n; k++ {
+			a.styles[k] = sp.Attrs.Apply(a.styles[k])
+		}
+	}
 }
 
 // cursorTint reports the background for the row the cursor is on.

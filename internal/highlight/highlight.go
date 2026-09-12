@@ -73,12 +73,16 @@ func NewEngine(maxScan, maxMatches int) *Engine {
 	return &Engine{MaxScan: maxScan, MaxMatches: maxMatches}
 }
 
-// Spans returns the styled ranges for line. The result is valid until the next
-// call.
-func (e *Engine) Spans(line []byte) []Span {
-	if len(line) > e.MaxScan {
-		line = line[:e.MaxScan]
-	}
+// SyntaxSpans returns what the profile makes of the line. The result is valid
+// until the next call to either span method.
+//
+// It is separate from the marks because anything the line itself carries --
+// the colours a log captured from a terminal was written with -- belongs
+// between the two: lv's guess at the shape of the line should not overpaint
+// what the producer actually said, and neither should overpaint the patterns
+// the user is hunting for.
+func (e *Engine) SyntaxSpans(line []byte) []Span {
+	line = e.bound(line)
 	e.spans = e.spans[:0]
 
 	if e.Profile != nil {
@@ -86,6 +90,14 @@ func (e *Engine) Spans(line []byte) []Span {
 			e.addRule(line, &e.Profile.Rules[i])
 		}
 	}
+	return e.spans
+}
+
+// MarkSpans returns where the rules the user added matched.
+func (e *Engine) MarkSpans(line []byte) []Span {
+	line = e.bound(line)
+	e.spans = e.spans[:0]
+
 	for i := range e.Marks {
 		mk := &e.Marks[i]
 		e.locs = mk.M.Find(line, e.locs[:0], e.MaxMatches)
@@ -94,6 +106,13 @@ func (e *Engine) Spans(line []byte) []Span {
 		}
 	}
 	return e.spans
+}
+
+func (e *Engine) bound(line []byte) []byte {
+	if len(line) > e.MaxScan {
+		return line[:e.MaxScan]
+	}
+	return line
 }
 
 func (e *Engine) addRule(line []byte, r *Rule) {
