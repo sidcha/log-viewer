@@ -222,14 +222,14 @@ func (a *App) exec(cmd config.Command, count int64) {
 			a.doSearchMode(pattern, mode, false)
 			return
 		}
-		a.openFinder(findSearch, "")
+		a.openSearchFinder(false)
 	case "search-backward":
 		if len(cmd.Args) == 1 {
 			pattern, mode := splitModePrefix(cmd.Args[0], defaultMode(findSearch))
 			a.doSearchMode(pattern, mode, true)
 			return
 		}
-		a.openFinder(findSearch, "")
+		a.openSearchFinder(true)
 	case "jump":
 		pattern := ""
 		if len(cmd.Args) == 1 {
@@ -577,16 +577,21 @@ func (a *App) gotoSourceLine(n int64) {
 
 // doSearchAt installs a search and goes straight to a line already chosen in
 // the finder, instead of scanning for the next match.
-func (a *App) doSearchAt(pattern string, mode filter.Mode, num int64) {
+func (a *App) doSearchAt(pattern string, mode filter.Mode, back bool, num int64) {
 	m, err := filter.Compile(pattern, mode, a.cfg.Case())
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return
 	}
-	a.search = searchState{m: m, pat: pattern, back: false, cur: -1}
+	a.search = searchState{m: m, pat: pattern, back: back, cur: -1}
 	if num > 0 {
 		a.gotoSourceLine(num)
+		return
 	}
+	// Nothing was picked -- the window found no match, or was committed
+	// before the scan reached one. Run the search itself rather than leaving
+	// a highlight and no movement.
+	a.startSearch(a.top, back)
 }
 
 // doSearch runs a search the way / does, for callers that have no mode of
@@ -630,13 +635,26 @@ func (a *App) searchStep(reverse bool) {
 		from++
 	}
 	if from < 0 {
-		a.infof("start of file")
+		// Already at the first line: there is nothing above to search.
+		a.wrapSearch(back)
 		return
 	}
 	a.startSearch(from, back)
 }
 
 func (a *App) startSearch(from int64, back bool) {
+	a.searchFrom(from, back, false)
+}
+
+// searchFrom runs a search, carrying on from the other end of the file when it
+// runs out.
+//
+// The window that collects a pattern lists matches from anywhere, so n and N
+// have to be able to reach them; stopping at the end while the window plainly
+// showed a match above would be the same lie in a different place. wrapped
+// says this is already the second pass, so a pattern that is genuinely absent
+// reports that instead of going round for ever.
+func (a *App) searchFrom(from int64, back, wrapped bool) {
 	a.cancelBusy()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -666,6 +684,8 @@ func (a *App) startSearch(from int64, back bool) {
 				// cancelled; cancel() already said so
 			case err != nil:
 				a.errorf("search: %v", err)
+			case !found && !wrapped:
+				a.wrapSearch(back)
 			case !found:
 				a.infof("pattern not found: %s", pat)
 			default:
@@ -674,6 +694,22 @@ func (a *App) startSearch(from int64, back bool) {
 			}
 		})
 	}()
+}
+
+// wrapSearch starts again from the far end of the file, as vi does.
+func (a *App) wrapSearch(back bool) {
+	n := a.viewLen()
+	if n == 0 {
+		a.infof("pattern not found: %s", a.search.pat)
+		return
+	}
+	if back {
+		a.infof("search hit the start, continuing at the end")
+		a.searchFrom(n-1, true, true)
+		return
+	}
+	a.infof("search hit the end, continuing at the start")
+	a.searchFrom(0, false, true)
 }
 
 // ------------------------------------------------------------------- export

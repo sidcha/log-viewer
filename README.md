@@ -247,6 +247,14 @@ about lines that are currently hidden, which is precisely what an inline preview
 could never show. Rules already in force are summarised in the window's frame,
 and `=` opens the full list.
 
+`f`, `/` and `?` carry on from the top of the file when the matches below you
+run out, and the frame says `wrapped` once they have. A window that reported no
+matches while the pattern sat ten lines above — and then lit those matches up
+the moment it was committed — would be worse than no window at all. `n` and `N`
+wrap for the same reason, saying so when they do, so they can reach everything
+the window listed. The rule windows do not wrap: a rule applies to the whole
+file however it was found, so the matches below are a fair sample of it.
+
 ### Going somewhere
 
 `f` is the same window used for nothing but navigation, the way fzf picks a
@@ -255,13 +263,9 @@ moves the cursor there. It leaves *nothing* behind — no highlight to clear
 afterwards, and `n` and `N` carry on stepping through whatever you last searched
 for.
 
-It is also the one window that wraps. The others look ahead of you, because a
-rule applies to the whole file however it was found and a search has `n` to
-continue with; a jump has neither, and the line you want is as likely to be
-behind you. So `f` fills the window from below the cursor first, and when those
-run out carries on from the start of the file, stopping where it began. The
-frame says `wrapped` when it has come round, so a list running 4,812 then 31
-does not read as a bug.
+Like `/`, it fills the window from below the cursor first and then carries on
+from the start of the file, stopping where it began — the line you are reaching
+for is as likely to be behind you as ahead.
 
 An unbalanced bracket says so while you type rather than after you commit. Over
 a very large log a filter is slow to undo, and a pattern that looked right often

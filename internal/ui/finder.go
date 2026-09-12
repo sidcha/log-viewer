@@ -49,11 +49,13 @@ func (k finderKind) String() string {
 
 // wraps reports whether running out of file means starting again from the top.
 //
-// Only the jump window does. The others are about the log ahead of you -- a
-// rule applies to the whole file however it was found, and a search has n and
-// N to carry on with -- but a jump is the one case where the line you want may
-// well be behind you, and there is nothing left over to reach it with.
-func (k finderKind) wraps() bool { return k == findJump }
+// Going somewhere wraps; making a rule does not. A rule applies to the whole
+// file however it was found, so the matches below are a fair sample of it --
+// but a search or a jump is about reaching a line, and the line wanted is as
+// likely to be behind you. A window that answered "no matches" while the
+// pattern was ten lines up, and then lit those matches up the moment it was
+// committed, would be worse than no window at all.
+func (k finderKind) wraps() bool { return k == findJump || k == findSearch }
 
 // rule returns the rule action this window commits, for the three that make one.
 func (k finderKind) rule() (filter.Action, bool) {
@@ -110,6 +112,9 @@ type finder struct {
 	// editing is the rule this window is rewriting, or -1.
 	editing int
 
+	// back is the direction a committed search steps in, for ?.
+	back bool
+
 	color filter.Color
 	style tcell.Style
 }
@@ -153,6 +158,14 @@ func (a *App) openFinder(kind finderKind, pattern string) {
 	}
 	a.find = f
 	a.restartFinder()
+}
+
+// openSearchFinder is / and ?, which differ only in the direction n and N
+// will step once the pattern is committed. Both list the same matches: the
+// window is about finding the line, not about which way to walk from it.
+func (a *App) openSearchFinder(back bool) {
+	a.openFinder(findSearch, "")
+	a.find.back = back
 }
 
 func (a *App) closeFinder() {
@@ -525,7 +538,7 @@ func (a *App) commitFinder() {
 		*f.hist = appendHistory(*f.hist, pattern)
 	}
 
-	kind, color, mode, editing := f.kind, f.color, f.mode, f.editing
+	kind, color, mode, editing, back := f.kind, f.color, f.mode, f.editing, f.back
 	row := f.selected()
 	var num int64
 	if row != nil {
@@ -553,7 +566,7 @@ func (a *App) commitFinder() {
 
 	// A search: make it the pattern n and N step through, and go to the match
 	// that was highlighted.
-	a.doSearchAt(pattern, mode, num)
+	a.doSearchAt(pattern, mode, back, num)
 }
 
 // ------------------------------------------------------------------ drawing

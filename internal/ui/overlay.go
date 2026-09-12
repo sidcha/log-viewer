@@ -389,7 +389,8 @@ func (a *App) showHelp() {
 		ovRow{text: "  <C-p> and <C-n> recall patterns typed earlier.", style: "overlay.dim", item: -1},
 		ovRow{text: "  Only f matches loosely; the rest match the text exactly as typed.", style: "overlay.dim", item: -1},
 		ovRow{text: "  f just goes there and leaves nothing behind; / also lights up", style: "overlay.dim", item: -1},
-		ovRow{text: "  every match for n and N. f carries on from the top of the file.", style: "overlay.dim", item: -1},
+		ovRow{text: "  every match for n and N, and ? makes them step backwards.", style: "overlay.dim", item: -1},
+		ovRow{text: "  f / and ? carry on from the top when the matches below run out.", style: "overlay.dim", item: -1},
 		ovRow{text: "", item: -1},
 		ovRow{text: "CONFIG", style: "overlay.title", item: -1},
 	)
