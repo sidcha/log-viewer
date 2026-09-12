@@ -15,7 +15,7 @@ GO := $(NIX) go
 
 GOFILES := $(shell find . -name '*.go' -not -path './bin/*')
 
-.PHONY: all build install test race bench vet fmt lint check clean release scale
+.PHONY: all build install test race bench vet fmt lint check clean release scale cross
 
 all: build
 
@@ -49,13 +49,24 @@ scale:
 vet:
 	$(GO) vet ./...
 
+# Every platform lv claims to run on. A package that only compiles on the host
+# otherwise goes unnoticed until someone tries to build it elsewhere.
+CROSS := linux/amd64 linux/arm64 darwin/arm64 freebsd/amd64 openbsd/amd64 windows/amd64
+
+cross:
+	@for t in $(CROSS); do \
+		echo "build $$t"; \
+		GOOS=$${t%/*} GOARCH=$${t#*/} $(GO) build ./... || exit 1; \
+		GOOS=$${t%/*} GOARCH=$${t#*/} $(GO) vet ./... || exit 1; \
+	done
+
 fmt:
 	$(NIX) gofmt -w $(GOFILES)
 
 lint:
 	$(NIX) golangci-lint run
 
-check: fmt vet test
+check: fmt vet cross test
 	@test -z "$$($(NIX) gofmt -l $(GOFILES))" || { echo "gofmt needed:"; $(NIX) gofmt -l $(GOFILES); exit 1; }
 
 clean:
