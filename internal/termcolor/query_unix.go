@@ -19,17 +19,17 @@ import (
 func query(tty *os.File, timeout time.Duration) (Colors, bool) {
 	fd := int(tty.Fd())
 
-	saved, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	saved, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return Colors{}, false // not a terminal
 	}
-	defer unix.IoctlSetTermios(fd, unix.TCSETS, saved)
+	defer unix.IoctlSetTermios(fd, ioctlSetTermios, saved)
 
 	raw := *saved
 	raw.Lflag &^= unix.ICANON | unix.ECHO
 	raw.Cc[unix.VMIN] = 0
 	raw.Cc[unix.VTIME] = 1 // 100ms granularity, used only as a backstop
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &raw); err != nil {
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &raw); err != nil {
 		return Colors{}, false
 	}
 
