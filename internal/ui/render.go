@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -455,7 +456,7 @@ func (a *App) stateText() string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, " %s  %s/%s", shortName(a.src.Name()), commas(pos), commas(n))
+	fmt.Fprintf(&b, " %s  %s/%s", filepath.Base(a.src.Name()), commas(pos), commas(n))
 	if n > 0 {
 		fmt.Fprintf(&b, " (%d%%)", clampPct((a.top+int64(a.rows))*100/n))
 	}
@@ -520,13 +521,6 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-func shortName(p string) string {
-	if i := strings.LastIndexByte(p, '/'); i >= 0 && i+1 < len(p) {
-		return p[i+1:]
-	}
-	return p
 }
 
 // commas formats a number with thousands separators, which matters when the

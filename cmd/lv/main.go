@@ -21,6 +21,7 @@ import (
 	"github.com/sidcha/log-viewer/internal/ruleset"
 	"github.com/sidcha/log-viewer/internal/source"
 	"github.com/sidcha/log-viewer/internal/termcolor"
+	"github.com/sidcha/log-viewer/internal/tty"
 	"github.com/sidcha/log-viewer/internal/ui"
 	"github.com/sidcha/log-viewer/internal/watch"
 )
@@ -246,14 +247,14 @@ func detectColors(cfg *config.Config, opt *options) termcolor.Colors {
 	}
 
 	// Asking needs the terminal itself, not stdin, which may be a pipe.
-	var tty *os.File
+	var term *os.File
 	if forced == "auto" {
-		if f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			tty = f
+		if f, err := tty.Open(); err == nil {
+			term = f
 			defer f.Close()
 		}
 	}
-	return termcolor.Detect(tty, forced, queryTimeout)
+	return termcolor.Detect(term, forced, queryTimeout)
 }
 
 // deriveStyles replaces the tints that only make sense relative to the

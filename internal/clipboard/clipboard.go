@@ -4,9 +4,10 @@ package clipboard
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/sidcha/log-viewer/internal/tty"
 )
 
 // maxOSC52 bounds how much is sent through the terminal escape.
@@ -55,14 +56,14 @@ func runCommand(text, command string) error {
 // than to stdout, which may be a pipe, and bypasses the screen library so the
 // escape is not mistaken for something to draw.
 func writeOSC52(text string) error {
-	tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
+	term, err := tty.Open()
 	if err != nil {
 		return err
 	}
-	defer tty.Close()
+	defer term.Close()
 
 	enc := base64.StdEncoding.EncodeToString([]byte(text))
-	_, err = fmt.Fprintf(tty, "\x1b]52;c;%s\a", enc)
+	_, err = fmt.Fprintf(term, "\x1b]52;c;%s\a", enc)
 	return err
 }
 

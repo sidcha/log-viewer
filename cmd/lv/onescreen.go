@@ -8,6 +8,7 @@ import (
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/lines"
 	"github.com/sidcha/log-viewer/internal/source"
+	"github.com/sidcha/log-viewer/internal/tty"
 	"github.com/sidcha/log-viewer/internal/ui"
 )
 
@@ -34,13 +35,13 @@ const settleWait = 250 * time.Millisecond
 // too many bytes to possibly fit. Declining costs nothing -- the viewer opens
 // as usual over input that has not been consumed.
 func dumpIfItFits(cfg *config.Config, src *source.Source) (bool, error) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	term, err := tty.Open()
 	if err != nil {
 		return false, nil
 	}
-	defer tty.Close()
+	defer term.Close()
 
-	rows, cols, ok := winsize(tty)
+	rows, cols, ok := tty.Size(term)
 	if !ok || rows < 2 || cols < 2 {
 		return false, nil
 	}

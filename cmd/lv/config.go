@@ -186,7 +186,7 @@ func configUsage() {
   lv config --edit                   open the file in $EDITOR
 
 levels (files are read in this order, each overriding the last):
-  --system   `+config.SystemPath+`
+  --system   `+config.SystemPath()+`
   --global   per user, the default for writes
   --local    ./`+config.LocalName+`
 `)

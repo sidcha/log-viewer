@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -58,8 +59,31 @@ func ParseLevel(s string) (Level, error) {
 	return Global, fmt.Errorf("unknown level %q, want system, global or local", s)
 }
 
-// SystemPath is the machine-wide configuration file.
-const SystemPath = "/etc/lv/config"
+// SystemPath is the machine-wide configuration file: /etc/lv/config, or
+// %ProgramData%\lv\config on Windows.
+func SystemPath() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("ProgramData"), "lv", "config")
+	}
+	return "/etc/lv/config"
+}
+
+// globalDir is where the per-user file lives. Everywhere but Windows that is
+// the XDG location, including macOS, where a terminal program's configuration
+// conventionally sits beside everyone else's in ~/.config.
+func globalDir() (string, error) {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return x, nil
+	}
+	if runtime.GOOS == "windows" {
+		return os.UserConfigDir()
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config"), nil
+}
 
 // LocalName is the per-directory configuration file.
 const LocalName = ".lvconfig"
@@ -68,16 +92,13 @@ const LocalName = ".lvconfig"
 func Path(l Level) (string, error) {
 	switch l {
 	case System:
-		return SystemPath, nil
+		return SystemPath(), nil
 	case Global:
-		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-			return filepath.Join(x, "lv", "config"), nil
-		}
-		home, err := os.UserHomeDir()
+		dir, err := globalDir()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, ".config", "lv", "config"), nil
+		return filepath.Join(dir, "lv", "config"), nil
 	case Local:
 		wd, err := os.Getwd()
 		if err != nil {

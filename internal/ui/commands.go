@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -197,7 +198,7 @@ func (a *App) exec(cmd config.Command, count int64) {
 		if a.follow {
 			a.everFollowed = true
 			a.gotoEnd()
-			a.infof("following %s", shortName(a.src.Name()))
+			a.infof("following %s", filepath.Base(a.src.Name()))
 		} else {
 			a.infof("follow off")
 		}
@@ -434,7 +435,7 @@ func (a *App) reload() {
 	a.idx.Reset()
 	a.top = 0
 	a.search.cur = -1
-	a.infof("re-indexing %s", shortName(a.src.Name()))
+	a.infof("re-indexing %s", filepath.Base(a.src.Name()))
 }
 
 // ------------------------------------------------------------------- rules
