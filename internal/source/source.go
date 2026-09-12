@@ -47,10 +47,11 @@ type Source struct {
 	size   atomic.Int64
 	closed atomic.Bool
 
-	mu  sync.RWMutex // guards f, dev, ino across a rotation reopen
-	f   *os.File
-	dev uint64
-	ino uint64
+	mu sync.RWMutex // guards f and fi across a rotation reopen
+	f  *os.File
+	// fi identifies the file being read, so a replacement at the same path
+	// is recognised as a different file rather than as growth.
+	fi os.FileInfo
 
 	// set when spooling stdin
 	spoolDone atomic.Bool
@@ -143,8 +144,9 @@ func (s *Source) adopt(f *os.File) error {
 	if err != nil {
 		return err
 	}
-	dev, ino := identity(fi)
-	s.dev, s.ino = dev, ino
+	s.mu.Lock()
+	s.fi = fi
+	s.mu.Unlock()
 	s.size.Store(fi.Size())
 	return nil
 }
@@ -199,11 +201,10 @@ func (s *Source) Refresh() (Change, error) {
 		return Unchanged, err
 	}
 
-	dev, ino := identity(fi)
 	old := s.Size()
 
 	s.mu.RLock()
-	sameFile := dev == s.dev && ino == s.ino
+	sameFile := os.SameFile(fi, s.fi)
 	s.mu.RUnlock()
 
 	switch {
