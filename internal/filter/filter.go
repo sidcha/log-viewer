@@ -86,7 +86,7 @@ func Compile(pattern string, mode Mode, c Case) (Matcher, error) {
 	case Fuzzy:
 		return newFuzzy(pattern, fold), nil
 	case Regex:
-		return newPCRE(pattern, fold)
+		return newRegex(pattern, fold)
 	default:
 		return newLiteral(pattern, fold), nil
 	}

@@ -2,6 +2,8 @@ package filter
 
 import (
 	"fmt"
+	"regexp"
+	"regexp/syntax"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +30,7 @@ const (
 	// to keep as a filter.
 	Fuzzy
 	// Regex is PCRE: lookaround, backreferences and lazy quantifiers all work.
+	// A pattern that needs none of them runs on RE2, which is linear time.
 	Regex
 )
 
@@ -138,7 +141,118 @@ func (f *fuzzyMatcher) eq(a, b rune) bool {
 	return a == b
 }
 
-// -------------------------------------------------------------------- PCRE
+// ------------------------------------------------------------------- regex
+
+// newRegex compiles a pattern in Regex mode.
+//
+// Most patterns people write need nothing RE2 lacks, and RE2 is an order of
+// magnitude faster over a large file: it matches bytes directly, where the
+// backtracking engine decodes every line to runes first, and it cannot be
+// driven into exponential time. So the backtracking engine is kept for the
+// patterns that need it -- lookaround, backreferences -- and RE2 runs
+// everything else.
+//
+// Which engine runs must not change what a pattern means. The backtracking
+// engine is compiled in its RE2 compatibility mode, which reads \d, \w, \s,
+// $ and POSIX classes as RE2 does while keeping every PCRE feature, and it
+// always compiles first, so a pattern is accepted or rejected the same way
+// whichever engine ends up running it.
+func newRegex(pattern string, fold bool) (Matcher, error) {
+	opts := regexp2.RegexOptions(regexp2.RE2)
+	if fold {
+		opts |= regexp2.IgnoreCase
+	}
+	back, err := regexp2.Compile(pattern, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	goPattern := pattern
+	if fold {
+		goPattern = "(?i)" + pattern
+	}
+	back.MatchTimeout = matchTimeout
+	slow := &pcreMatcher{re: back, raw: pattern}
+
+	re, err := regexp.Compile(goPattern)
+	if err != nil {
+		return slow, nil
+	}
+	m := &re2Matcher{re: re, raw: pattern}
+	if hasWordBoundary(re) {
+		// The one place the engines still differ: the backtracking engine's
+		// \b knows that é is a letter, and RE2's does not. They agree on
+		// ASCII, so only lines that are not ASCII take the slow path.
+		m.unicode = slow
+	}
+	return m, nil
+}
+
+func hasWordBoundary(re *regexp.Regexp) bool {
+	tree, err := syntax.Parse(re.String(), syntax.Perl)
+	if err != nil {
+		return true
+	}
+	var walk func(*syntax.Regexp) bool
+	walk = func(n *syntax.Regexp) bool {
+		if n.Op == syntax.OpWordBoundary || n.Op == syntax.OpNoWordBoundary {
+			return true
+		}
+		for _, sub := range n.Sub {
+			if walk(sub) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(tree)
+}
+
+type re2Matcher struct {
+	re  *regexp.Regexp
+	raw string
+	// unicode handles lines that are not ASCII, for a pattern whose meaning
+	// there depends on the engine.
+	unicode *pcreMatcher
+}
+
+func (r *re2Matcher) Pattern() string { return r.raw }
+func (r *re2Matcher) Mode() Mode      { return Regex }
+
+func (r *re2Matcher) Match(line []byte) bool {
+	if r.unicode != nil && !isASCII(line) {
+		return r.unicode.Match(line)
+	}
+	return r.re.Match(line)
+}
+
+func (r *re2Matcher) Find(line []byte, dst [][2]int, limit int) [][2]int {
+	if r.unicode != nil && !isASCII(line) {
+		return r.unicode.Find(line, dst, limit)
+	}
+	n := -1
+	if limit > 0 {
+		n = limit - len(dst)
+		if n <= 0 {
+			return dst
+		}
+	}
+	for _, loc := range r.re.FindAllIndex(line, n) {
+		if loc[1] > loc[0] {
+			dst = append(dst, [2]int{loc[0], loc[1]})
+		}
+	}
+	return dst
+}
+
+func isASCII(b []byte) bool {
+	for _, c := range b {
+		if c >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
 
 type pcreMatcher struct {
 	re  *regexp2.Regexp
@@ -149,19 +263,6 @@ type pcreMatcher struct {
 // the renderer, a background scan and an export at once, so the buffer cannot
 // live on the matcher itself.
 var runeBufs = sync.Pool{New: func() any { s := make([]rune, 0, 256); return &s }}
-
-func newPCRE(pattern string, fold bool) (*pcreMatcher, error) {
-	opts := regexp2.None
-	if fold {
-		opts |= regexp2.IgnoreCase
-	}
-	re, err := regexp2.Compile(pattern, opts)
-	if err != nil {
-		return nil, err
-	}
-	re.MatchTimeout = matchTimeout
-	return &pcreMatcher{re: re, raw: pattern}, nil
-}
 
 func (p *pcreMatcher) Pattern() string { return p.raw }
 func (p *pcreMatcher) Mode() Mode      { return Regex }
