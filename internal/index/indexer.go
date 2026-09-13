@@ -13,11 +13,6 @@ import (
 // screen appears immediately.
 const batchLines = 8192
 
-// adviseThreshold is the file size above which a full index pass hands page
-// ranges back to the kernel as it goes, so scanning a huge log does not evict
-// everything else on the machine.
-const adviseThreshold = 2 << 30
-
 // Options configures an Indexer.
 type Options struct {
 	// Wake fires when the file may have changed. It is a hint, not a change
@@ -149,7 +144,7 @@ func (ix *Indexer) consume(ctx context.Context, size int64) {
 	if ix.sc == nil || ix.idx.Gen() != ix.gen {
 		ix.gen = ix.idx.Gen()
 		ix.sc = lines.NewScanner(ix.src, tail, size, ix.opt.Block)
-		ix.sc.SetAdvise(ix.advising(size))
+		ix.sc.SetAdvise(lines.Advise(ix.opt.Advise, size))
 	}
 	ix.sc.SetLimit(size)
 	ix.sc.SeekTo(tail)
@@ -182,16 +177,5 @@ func (ix *Indexer) consume(ctx context.Context, size int64) {
 
 	if err := ix.sc.Err(); err != nil {
 		ix.idx.SetErr(err)
-	}
-}
-
-func (ix *Indexer) advising(size int64) bool {
-	switch ix.opt.Advise {
-	case "on":
-		return true
-	case "off":
-		return false
-	default:
-		return size > adviseThreshold
 	}
 }

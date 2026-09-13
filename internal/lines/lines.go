@@ -23,7 +23,24 @@ const (
 	// advisePeriod is how far behind the read head we hand pages back to the
 	// kernel during a bulk sequential pass.
 	advisePeriod = 8 << 20
+	// adviseThreshold is the file size above which a full pass hands pages
+	// back to the kernel on "auto", so scanning a huge log does not evict
+	// everything else on the machine.
+	adviseThreshold = 2 << 30
 )
+
+// Advise decides whether a full pass over size bytes should release the page
+// cache behind it, given the page-cache-advise setting: "on", "off" or "auto".
+func Advise(mode string, size int64) bool {
+	switch mode {
+	case "on":
+		return true
+	case "off":
+		return false
+	default:
+		return size > adviseThreshold
+	}
+}
 
 // Scanner reads lines forward from a source.Source.
 //
