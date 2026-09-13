@@ -1,29 +1,36 @@
 // Package index maintains a sparse map from line number to byte offset.
 //
 // A dense table is unaffordable: a 100 GB log holds on the order of 10^9 lines,
-// which is 8 GB of int64. Instead only every stride-th line start is recorded,
-// and reaching an arbitrary line means seeking to the nearest checkpoint and
-// scanning forward at most stride-1 newlines — one block read.
+// which is 8 GB of int64. Instead the line starts go into a sparse
+// checkpoint.Table, and reaching an arbitrary line means seeking to the nearest
+// checkpoint and scanning forward at most a stride of lines, or of bytes,
+// whichever comes first.
 //
-// The checkpoint slice itself is capped. When it would exceed maxCheckpoints,
-// every second entry is dropped and the stride doubles. Index memory is
-// therefore O(1) in file size, and the cost is only a longer forward scan.
+// The table is capped. When it would exceed maxCheckpoints, every second entry
+// is dropped and the strides double. Index memory is therefore O(1) in file
+// size, and the cost is only a longer forward scan.
 package index
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/sidcha/log-viewer/internal/checkpoint"
+)
 
 // DefaultStride is the initial number of lines between checkpoints.
 const DefaultStride = 1024
 
-// DefaultMaxCheckpoints caps checkpoint memory at 8 MiB.
-const DefaultMaxCheckpoints = 1 << 20
+// DefaultMaxCheckpoints caps checkpoint memory at 8 MiB: 16 bytes each.
+const DefaultMaxCheckpoints = 1 << 19
+
+// DefaultByteStride bounds the bytes between checkpoints, so a file of very
+// long lines costs no more to seek in than one of short lines.
+const DefaultByteStride = 1 << 20
 
 // Index is safe for concurrent use: one writer (the Indexer) and many readers.
 type Index struct {
-	mu     sync.RWMutex
-	stride int64
-	maxCk  int
-	off    []int64 // off[i] is the byte offset of line i*stride
+	mu sync.RWMutex
+	ck *checkpoint.Table
 
 	complete int64 // newline-terminated lines seen
 	tail     int64 // offset just past the last newline; bytes consumed
@@ -40,12 +47,7 @@ func New(stride int64, maxCk int) *Index {
 	if maxCk <= 0 {
 		maxCk = DefaultMaxCheckpoints
 	}
-	if maxCk < 4 {
-		// Below this the table would collapse on almost every append and the
-		// stride would run away.
-		maxCk = 4
-	}
-	return &Index{stride: stride, maxCk: maxCk}
+	return &Index{ck: checkpoint.New(stride, DefaultByteStride, maxCk, false)}
 }
 
 // Add records a batch of line-start offsets, in order, followed by the new
@@ -55,15 +57,7 @@ func (x *Index) Add(starts []int64, tail, size int64) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	for _, o := range starts {
-		if x.complete%x.stride == 0 {
-			x.off = append(x.off, o)
-			// Enforce the cap inside the loop, not once per batch: a single
-			// Add may carry far more lines than a stride, and the whole point
-			// of the ceiling is that it cannot be exceeded.
-			if len(x.off) >= x.maxCk {
-				x.collapse()
-			}
-		}
+		x.ck.Item(x.complete, o, x.complete)
 		x.complete++
 	}
 	x.tail = tail
@@ -72,28 +66,15 @@ func (x *Index) Add(starts []int64, tail, size int64) {
 	}
 }
 
-// collapse halves the checkpoint table and doubles the stride, preserving the
-// invariant off[i] == offset of line i*stride.
-func (x *Index) collapse() {
-	n := 0
-	for i := 0; i < len(x.off); i += 2 {
-		x.off[n] = x.off[i]
-		n++
-	}
-	x.off = x.off[:n]
-	x.stride *= 2
-}
-
 // Reset discards everything, for a truncated or rotated file. The generation
 // counter changes so readers can tell their cached positions are stale.
 func (x *Index) Reset() {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	x.off = x.off[:0]
+	x.ck.Reset()
 	x.complete = 0
 	x.tail = 0
 	x.size = 0
-	x.stride = DefaultStride
 	x.gen++
 	x.err = nil
 }
@@ -142,7 +123,7 @@ func (x *Index) Stats() (lines, scanned, size int64, stride int64, checkpoints i
 	if x.tail < x.size {
 		lines++
 	}
-	return lines, x.tail, x.size, x.stride, len(x.off)
+	return lines, x.tail, x.size, x.ck.KeyStride(), x.ck.Len()
 }
 
 // Caught reports whether indexing has consumed everything available.
@@ -179,12 +160,12 @@ func (x *Index) Gen() uint64 {
 func (x *Index) Checkpoint(n int64) (off, line int64) {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	if len(x.off) == 0 || n < 0 {
+	if n < 0 {
 		return 0, 0
 	}
-	i := n / x.stride
-	if i >= int64(len(x.off)) {
-		i = int64(len(x.off)) - 1
+	e, ok := x.ck.Lookup(n)
+	if !ok {
+		return 0, 0
 	}
-	return x.off[i], i * x.stride
+	return e.Off, e.Key
 }

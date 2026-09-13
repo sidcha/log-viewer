@@ -66,7 +66,7 @@ var Settings = []Setting{
 	{"max-line-bytes", kInt, "1048576", nil, "how much of one line is retained"},
 	{"max-scan-bytes", kInt, "4096", nil, "bytes of a line examined for highlighting"},
 	{"index-stride", kInt, "1024", nil, "lines between index checkpoints"},
-	{"max-checkpoints", kInt, "1048576", nil, "checkpoint ceiling before the stride doubles"},
+	{"max-checkpoints", kInt, "524288", nil, "line-index checkpoint ceiling (16 bytes each) before the stride doubles"},
 	{"page-cache-advise", kEnum, "auto", []string{"auto", "on", "off"}, "hand scanned pages back to the kernel"},
 	{"profile", kStr, "", nil, "force a syntax profile instead of detecting one"},
 	{"mouse", kBool, "on", nil, "enable mouse wheel scrolling"},
