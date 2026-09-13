@@ -39,21 +39,6 @@ type View interface {
 	Done() bool
 }
 
-// cacheEntry is a remembered position, so paging forward does not re-walk from
-// a checkpoint every frame.
-//
-// gen records the index generation the entry was taken under; a truncated or
-// rotated file bumps it and every remembered offset becomes meaningless. The
-// entry carries it rather than the view, so invalidation never needs a write
-// from the scanning goroutine.
-type cacheEntry struct {
-	idx  int64 // view line number
-	off  int64 // file offset of that line
-	src  int64 // 0-based source line number
-	gen  uint64
-	okay bool
-}
-
 // Base is the unfiltered whole-file view.
 type Base struct {
 	src   *source.Source
@@ -61,7 +46,7 @@ type Base struct {
 	rd    *lines.Reader
 	block int
 
-	cache [2]cacheEntry
+	pos posCache
 }
 
 // NewBase returns a view over the whole file.
@@ -87,7 +72,8 @@ func (b *Base) At(i int64, dst []byte) (Line, error) {
 	}
 	b.rd.SetLimit(b.idx.Size())
 
-	off, err := b.locate(i)
+	gen := b.idx.Gen()
+	off, err := b.locate(gen, i)
 	if err != nil {
 		return Line{}, err
 	}
@@ -95,20 +81,21 @@ func (b *Base) At(i int64, dst []byte) (Line, error) {
 	if err != nil {
 		return Line{}, err
 	}
-	b.remember(i, off, next)
+	b.pos.put(gen, position{idx: i, off: off, src: i})
+	if b.rd.Scanner().Terminated() {
+		// Only a finished line says where the next one starts: a partial
+		// tail may yet grow.
+		b.pos.put(gen, position{idx: i + 1, off: next, src: i + 1})
+	}
 	return Line{Text: text, Num: i + 1, Off: off, Next: next, Truncated: trunc}, nil
 }
 
 // locate finds the byte offset of view line i, starting from whichever is
 // closer: the nearest index checkpoint or a remembered position.
-func (b *Base) locate(i int64) (int64, error) {
+func (b *Base) locate(gen uint64, i int64) (int64, error) {
 	from, fromLine := b.idx.Checkpoint(i)
-
-	gen := b.idx.Gen()
-	for _, c := range b.cache {
-		if c.okay && c.gen == gen && c.idx <= i && c.idx > fromLine {
-			from, fromLine = c.off, c.idx
-		}
+	if p, ok := b.pos.nearest(gen, i); ok && p.idx > fromLine {
+		from, fromLine = p.off, p.idx
 	}
 
 	if k := i - fromLine; k > 0 {
@@ -119,14 +106,6 @@ func (b *Base) locate(i int64) (int64, error) {
 		from = pos
 	}
 	return from, nil
-}
-
-func (b *Base) remember(i, off, next int64) {
-	gen := b.idx.Gen()
-	// Two entries: the line just read, so a redraw of the same screen is free,
-	// and the line after it, so scrolling down by one is free.
-	b.cache[0] = cacheEntry{idx: i, off: off, gen: gen, okay: true}
-	b.cache[1] = cacheEntry{idx: i + 1, off: next, gen: gen, okay: true}
 }
 
 // Iterate implements View.

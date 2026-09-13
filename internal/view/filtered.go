@@ -2,10 +2,10 @@ package view
 
 import (
 	"context"
-	"sort"
 	"sync"
 	"time"
 
+	"github.com/sidcha/log-viewer/internal/checkpoint"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/index"
 	"github.com/sidcha/log-viewer/internal/lines"
@@ -15,44 +15,65 @@ import (
 const (
 	// ckStride is how many matches sit between filtered-view checkpoints.
 	ckStride = 1024
-	// ckMax caps the checkpoint table, as in package index.
-	ckMax = 1 << 20
+	// ckMax caps the checkpoint table at 6 MiB: 24 bytes an entry.
+	ckMax = 1 << 18
+	// DefaultCheckpointBytes bounds the bytes between filtered-view
+	// checkpoints, however rare the matches: a fraction of a millisecond of
+	// reading from the page cache.
+	DefaultCheckpointBytes = 256 << 10
 	// flushMatches / flushLines bound how long the scan goes without publishing
 	// progress: often enough to feel live, rarely enough that the lock is free.
 	flushMatches = 4096
 	flushLines   = 1 << 16
+	// cancelEvery is how many lines the scan reads between checks for
+	// cancellation, so closing a view never waits on more than a moment's
+	// reading.
+	cancelEvery = 1024
 )
+
+// FilteredOptions configures a filtered view.
+type FilteredOptions struct {
+	// Block is the read size; MaxLine bounds the retained length of a line.
+	Block, MaxLine int
+	// Poll is how often a caught-up scan looks for new data when nothing
+	// nudges it.
+	Poll time.Duration
+	// Advise is the page-cache-advise setting: "on", "off" or "auto".
+	Advise string
+	// CheckpointBytes bounds the bytes between checkpoints; zero selects
+	// DefaultCheckpointBytes.
+	CheckpointBytes int64
+	// Notify is called after every published batch. It must not block.
+	Notify func()
+}
 
 // Filtered is a view of the lines that survive a filter rules.
 //
-// It uses the same sparse-checkpoint trick as the line index: the file offset
-// and source line number of every ckStride-th matching line are recorded, and
-// reaching an arbitrary filtered line means seeking to the nearest checkpoint
-// and re-applying the predicate forward. A filter that matches a billion lines
-// costs the same 8 MB ceiling as the index does.
+// It records positions in a sparse checkpoint.Table: every ckStride-th
+// matching line, and a position every CheckpointBytes whatever matched.
+// Reaching an arbitrary filtered line means seeking to the nearest entry and
+// re-applying the predicate forward, which is therefore bounded in bytes as
+// well as in matches. A filter that matches a billion lines costs the same
+// memory ceiling as one that matches none.
 type Filtered struct {
 	src   *source.Source
 	base  *index.Index
 	rules *filter.Set
-	block int
-	poll  time.Duration
+	opt   FilteredOptions
 
 	mu      sync.RWMutex
-	stride  int64
-	ckOff   []int64
-	ckSrc   []int64
+	ck      *checkpoint.Table
 	n       int64 // matches found so far
 	scanned int64 // bytes consumed
 	srcLine int64 // source lines consumed
 	done    bool
 	err     error
 
-	rd    *lines.Reader
-	cache [2]cacheEntry
+	rd  *lines.Reader
+	pos posCache
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	notify func()
 	// nudge wakes the scan the moment the indexer reports new bytes, so a
 	// filtered view of a live stream is as current as an unfiltered one
 	// instead of trailing it by a poll interval.
@@ -71,26 +92,27 @@ func (f *Filtered) Nudge() {
 // NewFiltered starts a background scan applying rules to the whole file and
 // returns a view over the result. Results stream in, so the view is usable long
 // before the scan finishes. Close stops the scan.
-func NewFiltered(src *source.Source, base *index.Index, rules *filter.Set, block, maxLine int, poll time.Duration, notify func()) *Filtered {
-	if poll <= 0 {
-		poll = 150 * time.Millisecond
+func NewFiltered(src *source.Source, base *index.Index, rules *filter.Set, opt FilteredOptions) *Filtered {
+	if opt.Poll <= 0 {
+		opt.Poll = 150 * time.Millisecond
 	}
-	if notify == nil {
-		notify = func() {}
+	if opt.Notify == nil {
+		opt.Notify = func() {}
 	}
-	rd := lines.NewReader(src, base.Size(), block)
-	rd.SetMaxLine(maxLine)
+	if opt.CheckpointBytes <= 0 {
+		opt.CheckpointBytes = DefaultCheckpointBytes
+	}
+	rd := lines.NewReader(src, base.Size(), opt.Block)
+	rd.SetMaxLine(opt.MaxLine)
 
 	f := &Filtered{
-		src:    src,
-		base:   base,
-		rules:  rules,
-		block:  block,
-		poll:   poll,
-		stride: ckStride,
-		rd:     rd,
-		notify: notify,
-		nudge:  make(chan struct{}, 1),
+		src:   src,
+		base:  base,
+		rules: rules,
+		opt:   opt,
+		ck:    checkpoint.New(ckStride, opt.CheckpointBytes, ckMax, true),
+		rd:    rd,
+		nudge: make(chan struct{}, 1),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -100,16 +122,14 @@ func NewFiltered(src *source.Source, base *index.Index, rules *filter.Set, block
 	return f
 }
 
-// Close stops the background scan and waits for it to exit.
+// Close stops the background scan and waits for it to exit, which it does
+// within cancelEvery lines.
 func (f *Filtered) Close() {
 	if f.cancel != nil {
 		f.cancel()
 		f.wg.Wait()
 	}
 }
-
-// Rules is the rule set this view was built from.
-func (f *Filtered) Rules() *filter.Set { return f.rules }
 
 // Len implements View.
 func (f *Filtered) Len() int64 {
@@ -148,79 +168,93 @@ func (f *Filtered) SourceLinesScanned() int64 {
 	return f.srcLine
 }
 
+// pending is a position the scan found worth recording, held until the next
+// publish so the lock is taken once per batch.
+type pending struct {
+	key, off, src int64
+	item          bool
+}
+
+// scanState is how far the scan has got. Only the scan goroutine writes it;
+// publish copies it into the fields readers see.
+type scanState struct {
+	n, pos, src int64
+}
+
 // run is the background scan. It follows the file: when it reaches the end it
 // waits for the indexer to report more bytes and carries on.
 func (f *Filtered) run(ctx context.Context) {
 	defer f.wg.Done()
 
-	size := f.base.Size()
-	sc := lines.NewScanner(f.src, 0, size, f.block)
-	sc.SetAdvise(size > 2<<30)
-
-	tick := time.NewTicker(f.poll)
+	var (
+		st   scanState
+		gen  = f.base.Gen()
+		sc   = f.newScanner(0)
+		pend = make([]pending, 0, flushMatches)
+		gap  = f.opt.CheckpointBytes / 2
+		last = int64(-1) << 62 // offset of the last position offered
+	)
+	tick := time.NewTicker(f.opt.Poll)
 	defer tick.Stop()
 
-	var (
-		offs = make([]int64, 0, flushMatches)
-		srcs = make([]int64, 0, flushMatches)
-		gen  = f.base.Gen()
-	)
+	flush := func(done bool) {
+		gap = f.publish(pend, st, done) / 2
+		pend = pend[:0]
+		f.opt.Notify()
+	}
 
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-
 		if g := f.base.Gen(); g != gen {
 			// The file was truncated or rotated: start over.
 			gen = g
 			f.reset()
-			sc = lines.NewScanner(f.src, 0, f.base.Size(), f.block)
+			st, last = scanState{}, int64(-1)<<62
+			sc = f.newScanner(0)
 		}
 
-		size = f.base.Size()
+		size := f.base.Size()
 		sc.SetLimit(size)
+		sc.SeekTo(st.pos)
 
-		var (
-			pos  = f.consumed()
-			src  = f.sourceLines()
-			seen int64
-		)
-		sc.SeekTo(pos)
-
+		var seen int64
 		for sc.Scan() {
 			if !sc.Terminated() {
 				break
 			}
+			off := sc.Offset()
 			if f.rules.Pass(sc.Bytes()) {
-				offs = append(offs, sc.Offset())
-				srcs = append(srcs, src)
+				pend = append(pend, pending{key: st.n, off: off, src: st.src, item: true})
+				st.n++
+				last = off
+			} else if gap > 0 && off-last >= gap {
+				// Offer a position now and then, whatever matched, so the
+				// table can bound the walk between rare matches.
+				pend = append(pend, pending{key: st.n, off: off, src: st.src})
+				last = off
 			}
-			src++
-			pos = sc.Next()
+			st.src++
+			st.pos = sc.Next()
 			seen++
 
-			if len(offs) >= flushMatches || seen >= flushLines {
-				f.publish(offs, srcs, pos, src, false)
-				offs, srcs, seen = offs[:0], srcs[:0], 0
-				f.notify()
-				if ctx.Err() != nil {
-					return
-				}
+			if seen%cancelEvery == 0 && ctx.Err() != nil {
+				return
+			}
+			if len(pend) >= flushMatches || seen >= flushLines {
+				flush(false)
+				seen = 0
 			}
 		}
 
-		caught := pos >= size && f.base.Caught()
-		f.publish(offs, srcs, pos, src, caught)
-		offs, srcs = offs[:0], srcs[:0]
-		f.notify()
+		flush(st.pos >= size && f.base.Caught())
 
 		if err := sc.Err(); err != nil {
 			f.setErr(err)
 			return
 		}
-
-		if pos < f.base.Size() {
+		if st.pos < f.base.Size() {
 			continue // more arrived while we were scanning
 		}
 		select {
@@ -232,47 +266,36 @@ func (f *Filtered) run(ctx context.Context) {
 	}
 }
 
-func (f *Filtered) consumed() int64 {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.scanned
+func (f *Filtered) newScanner(off int64) *lines.Scanner {
+	size := f.base.Size()
+	sc := lines.NewScanner(f.src, off, size, f.opt.Block)
+	sc.SetAdvise(lines.Advise(f.opt.Advise, size))
+	return sc
 }
 
-func (f *Filtered) sourceLines() int64 {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.srcLine
-}
-
-func (f *Filtered) publish(offs, srcs []int64, scanned, srcLine int64, done bool) {
+// publish records the pending positions and the scan's progress, and returns
+// the table's current byte stride so the scan can pace its offers.
+func (f *Filtered) publish(pend []pending, st scanState, done bool) int64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for i := range offs {
-		if f.n%f.stride == 0 {
-			f.ckOff = append(f.ckOff, offs[i])
-			f.ckSrc = append(f.ckSrc, srcs[i])
+	for _, p := range pend {
+		if p.item {
+			f.ck.Item(p.key, p.off, p.src)
+		} else {
+			f.ck.Pass(p.key, p.off, p.src)
 		}
-		f.n++
 	}
-	if len(f.ckOff) >= ckMax {
-		k := 0
-		for i := 0; i < len(f.ckOff); i += 2 {
-			f.ckOff[k], f.ckSrc[k] = f.ckOff[i], f.ckSrc[i]
-			k++
-		}
-		f.ckOff, f.ckSrc = f.ckOff[:k], f.ckSrc[:k]
-		f.stride *= 2
-	}
-	f.scanned = scanned
-	f.srcLine = srcLine
+	f.n = st.n
+	f.scanned = st.pos
+	f.srcLine = st.src
 	f.done = done
+	return f.ck.ByteStride()
 }
 
 func (f *Filtered) reset() {
 	f.mu.Lock()
-	f.ckOff, f.ckSrc = f.ckOff[:0], f.ckSrc[:0]
+	f.ck.Reset()
 	f.n, f.scanned, f.srcLine = 0, 0, 0
-	f.stride = ckStride
 	f.done = false
 	// The position cache is deliberately not touched here: it belongs to the
 	// goroutine calling At, and its entries carry the index generation, so a
@@ -286,57 +309,43 @@ func (f *Filtered) setErr(err error) {
 	f.mu.Unlock()
 }
 
-// checkpoint returns the nearest recorded position at or before filtered line i.
-func (f *Filtered) checkpoint(i int64) (off, src, match int64, ok bool) {
+// lookup returns the nearest recorded position at or before filtered line i.
+func (f *Filtered) lookup(i int64) (position, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if len(f.ckOff) == 0 || i < 0 {
-		return 0, 0, 0, false
-	}
-	j := i / f.stride
-	if j >= int64(len(f.ckOff)) {
-		j = int64(len(f.ckOff)) - 1
-	}
-	return f.ckOff[j], f.ckSrc[j], j * f.stride, true
+	e, ok := f.ck.Lookup(i)
+	return position{idx: e.Key, off: e.Off, src: e.Src}, ok
 }
 
 // IndexForSource returns the view index of the first surviving line whose
 // source line number is at or after src.
 //
-// This is how a position is preserved when a filter is added or removed: the
-// checkpoint table is sorted by source line, so a binary search plus a short
-// forward walk finds the anchor without rescanning the file.
+// This is how a position is preserved when a filter is added or removed. That
+// index is the number of surviving lines before src, so it is counted from the
+// nearest checkpoint at or before src -- a walk of at most one stride.
 func (f *Filtered) IndexForSource(src int64) (int64, bool) {
 	f.mu.RLock()
-	if len(f.ckSrc) == 0 {
-		f.mu.RUnlock()
+	e, ok := f.ck.LookupSrc(src)
+	total, scanned := f.n, f.scanned
+	f.mu.RUnlock()
+	if !ok {
 		return 0, false
 	}
-	j := sort.Search(len(f.ckSrc), func(i int) bool { return f.ckSrc[i] >= src })
-	var off, curSrc, match int64
-	if j == 0 {
-		off, curSrc, match = f.ckOff[0], f.ckSrc[0], 0
-	} else {
-		off, curSrc, match = f.ckOff[j-1], f.ckSrc[j-1], int64(j-1)*f.stride
-	}
-	total := f.n
-	f.mu.RUnlock()
 
-	if curSrc >= src {
-		return match, true
-	}
-
-	sc := lines.NewScanner(f.src, off, f.base.Size(), f.block)
-	for sc.Scan() && match < total {
-		if f.rules.Pass(sc.Bytes()) {
-			if curSrc >= src {
-				return match, true
+	match, cur := e.Key, e.Src
+	if cur < src {
+		sc := lines.NewScanner(f.src, e.Off, scanned, f.opt.Block)
+		for cur < src && sc.Scan() {
+			if f.rules.Pass(sc.Bytes()) {
+				match++
 			}
-			match++
+			cur++
 		}
-		curSrc++
 	}
-	return total, false
+	if match >= total {
+		return total, false
+	}
+	return match, true
 }
 
 // At implements View.
@@ -345,34 +354,32 @@ func (f *Filtered) At(i int64, dst []byte) (Line, error) {
 		return Line{}, ErrRange
 	}
 
-	off, src, match, ok := f.checkpoint(i)
+	from, ok := f.lookup(i)
 	if !ok {
 		return Line{}, ErrRange
 	}
 	gen := f.base.Gen()
-	for _, c := range f.cache {
-		if c.okay && c.gen == gen && c.idx <= i && c.idx > match {
-			off, src, match = c.off, c.src, c.idx
-		}
+	if p, ok := f.pos.nearest(gen, i); ok && p.off > from.off {
+		from = p
 	}
 
 	sc := f.rd.Scanner()
 	sc.SetLimit(f.base.Size())
-	sc.SeekTo(off)
+	sc.SeekTo(from.off)
 
+	match, src := from.idx, from.src
 	for sc.Scan() {
 		if f.rules.Pass(sc.Bytes()) {
 			if match == i {
-				text := append(dst, sc.Bytes()...)
 				ln := Line{
-					Text:      text,
+					Text:      append(dst, sc.Bytes()...),
 					Num:       src + 1,
 					Off:       sc.Offset(),
 					Next:      sc.Next(),
 					Truncated: sc.Truncated(),
 				}
-				f.cache[0] = cacheEntry{idx: i, off: sc.Offset(), src: src, gen: gen, okay: true}
-				f.cache[1] = cacheEntry{idx: i + 1, off: sc.Next(), src: src + 1, gen: gen, okay: true}
+				f.pos.put(gen, position{idx: i, off: ln.Off, src: src})
+				f.pos.put(gen, position{idx: i + 1, off: ln.Next, src: src + 1})
 				return ln, nil
 			}
 			match++
@@ -390,12 +397,10 @@ func (f *Filtered) Iterate(from int64, fn func(int64, Line) bool) error {
 	// Iterate must not depend on how far the background scan has got: an export
 	// is expected to be complete and correct the moment it is asked for. A
 	// checkpoint is only a shortcut, so fall back to scanning from the start.
-	off, src, match := int64(0), int64(0), int64(0)
-	if ckOff, ckSrc, ckMatch, ok := f.checkpoint(from); ok {
-		off, src, match = ckOff, ckSrc, ckMatch
-	}
+	start, _ := f.lookup(from)
 
-	sc := lines.NewScanner(f.src, off, f.base.Size(), f.block)
+	sc := lines.NewScanner(f.src, start.off, f.base.Size(), f.opt.Block)
+	match, src := start.idx, start.src
 	for sc.Scan() {
 		if f.rules.Pass(sc.Bytes()) {
 			if match >= from {

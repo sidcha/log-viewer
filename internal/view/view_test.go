@@ -153,7 +153,7 @@ func waitScan(t *testing.T, f *Filtered) {
 
 func newFiltered(t *testing.T, src *source.Source, idx *index.Index, s *filter.Set) *Filtered {
 	t.Helper()
-	f := NewFiltered(src, idx, s, 128, 1<<20, 5*time.Millisecond, nil)
+	f := NewFiltered(src, idx, s, FilteredOptions{Block: 128, MaxLine: 1 << 20, Poll: 5 * time.Millisecond})
 	t.Cleanup(f.Close)
 	return f
 }

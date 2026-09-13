@@ -501,13 +501,13 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 	a.top = 0
 
 	if next.Filtering() {
-		a.filt = view.NewFiltered(
-			a.src, a.idx, next,
-			a.cfg.Int("block-size"),
-			a.cfg.Int("max-line-bytes"),
-			a.cfg.Dur("scan-poll"),
-			a.Wake,
-		)
+		a.filt = view.NewFiltered(a.src, a.idx, next, view.FilteredOptions{
+			Block:   a.cfg.Int("block-size"),
+			MaxLine: a.cfg.Int("max-line-bytes"),
+			Poll:    a.cfg.Dur("scan-poll"),
+			Advise:  a.cfg.Str("page-cache-advise"),
+			Notify:  a.Wake,
+		})
 		a.filtPtr.Store(a.filt)
 	}
 	if preserve {

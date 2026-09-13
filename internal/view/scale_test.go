@@ -176,7 +176,7 @@ func TestScale(t *testing.T) {
 		}
 		rules := filter.NewSet().Add(filter.Rule{Action: filter.Only, M: m, Enabled: true})
 
-		f := NewFiltered(src, idx, rules, 0, 1<<20, 50*time.Millisecond, nil)
+		f := NewFiltered(src, idx, rules, FilteredOptions{MaxLine: 1 << 20, Poll: 50 * time.Millisecond})
 		defer f.Close()
 
 		start := time.Now()

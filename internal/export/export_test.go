@@ -87,7 +87,7 @@ func TestSaveFilteredView(t *testing.T) {
 	}
 	rules := filter.NewSet().Add(filter.Rule{Action: filter.Only, M: m, Enabled: true})
 
-	f := view.NewFiltered(src, idx, rules, 64, 1<<20, 5*time.Millisecond, nil)
+	f := view.NewFiltered(src, idx, rules, view.FilteredOptions{Block: 64, MaxLine: 1 << 20, Poll: 5 * time.Millisecond})
 	defer f.Close()
 
 	// Save deliberately runs its own pass, so it must be correct even before

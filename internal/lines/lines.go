@@ -282,9 +282,18 @@ type Reader struct {
 	sc *Scanner
 }
 
+// readerBlock caps a Reader's read size. A screenful of lines fits many times
+// over, and a jump elsewhere in the file -- which in a sparse filtered view is
+// every line -- costs this much rather than a full scan block. The buffer
+// still grows for a line longer than this.
+const readerBlock = 64 << 10
+
 // NewReader returns a Reader over src. The limit is raised with SetLimit as the
 // file grows.
 func NewReader(src *source.Source, limit int64, block int) *Reader {
+	if block <= 0 || block > readerBlock {
+		block = readerBlock
+	}
 	return &Reader{sc: NewScanner(src, 0, limit, block)}
 }
 
