@@ -208,10 +208,23 @@ func (a *App) Run(ctx context.Context) error {
 	tick := time.NewTicker(80 * time.Millisecond)
 	defer tick.Stop()
 
+	pace := newPacer(frameInterval)
+	defer pace.stop()
+	paint := func() {
+		a.draw()
+		pace.painted(time.Now())
+	}
+	// Background work asks for a frame; the pacer decides when it gets one.
+	request := func() {
+		if pace.request(time.Now()) {
+			paint()
+		}
+	}
+
 	if a.follow {
 		a.gotoEnd()
 	}
-	a.draw()
+	paint()
 
 	for !a.quit {
 		select {
@@ -225,21 +238,29 @@ func (a *App) Run(ctx context.Context) error {
 			a.drain(events)
 			a.lastAct = time.Now()
 			a.freed = false
+			// A key press is answered at once: the pacer only holds back
+			// frames nobody asked for.
+			paint()
 
 		case f := <-a.post:
 			f()
+			request()
 
 		case <-a.wake:
+			request()
+
+		case <-pace.C():
+			pace.fired()
+			paint()
 
 		case <-tick.C:
-			if !a.tickDirty() {
-				continue
+			if a.tickDirty() {
+				request()
 			}
 
 		case <-ctx.Done():
 			return nil
 		}
-		a.draw()
 	}
 	return nil
 }
