@@ -116,7 +116,8 @@ func (b *Base) Iterate(from int64, fn func(int64, Line) bool) error {
 	size := b.idx.Size()
 	ckOff, ckLine := b.idx.Checkpoint(from)
 
-	sc := lines.NewScanner(b.src, ckOff, size, b.block)
+	sc := lines.Borrow(b.src, ckOff, size, b.block)
+	defer sc.Release()
 	if k := from - ckLine; k > 0 {
 		if _, done := sc.SkipLines(ckOff, k); done < k {
 			return sc.Err()

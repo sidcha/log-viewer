@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"sync"
 
 	"github.com/sidcha/log-viewer/internal/source"
 )
@@ -82,6 +83,49 @@ func NewScanner(src *source.Source, off, limit int64, block int) *Scanner {
 		next:    off,
 	}
 	return s
+}
+
+// pool holds scanners between short-lived walks. A scan block is a megabyte,
+// and a yank, a finder refill or a backward search step each needs one for a
+// moment; allocating it every time is what the garbage collector then spends
+// its time on.
+var pool sync.Pool
+
+// maxPooled is the largest buffer worth keeping: one that grew to hold a very
+// long line is let go rather than pinned.
+const maxPooled = 4 << 20
+
+// Borrow returns a scanner like NewScanner's, reusing one released earlier
+// when it can. Give it back with Release once the walk is over; the lines it
+// returned are invalid from then on.
+func Borrow(src *source.Source, off, limit int64, block int) *Scanner {
+	if block <= 0 {
+		block = DefaultBlock
+	}
+	s, _ := pool.Get().(*Scanner)
+	if s == nil || cap(s.buf) < block {
+		return NewScanner(src, off, limit, block)
+	}
+	*s = Scanner{
+		src:     src,
+		buf:     s.buf[:cap(s.buf)],
+		long:    s.long[:0],
+		readOff: off,
+		limit:   limit,
+		maxLine: DefaultMaxLine,
+		off:     off,
+		next:    off,
+	}
+	return s
+}
+
+// Release returns a scanner obtained from Borrow to the pool.
+func (s *Scanner) Release() {
+	if cap(s.buf) > maxPooled {
+		return
+	}
+	s.src, s.line = nil, nil
+	pool.Put(s)
 }
 
 // SetMaxLine bounds the retained length of a single line.

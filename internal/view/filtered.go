@@ -414,7 +414,8 @@ func (f *Filtered) IndexForSource(src int64) (int64, bool) {
 
 	match, cur := e.Key, e.Src
 	if cur < src {
-		sc := lines.NewScanner(f.src, e.Off, scanned, f.opt.Block)
+		sc := lines.Borrow(f.src, e.Off, scanned, f.opt.Block)
+		defer sc.Release()
 		for cur < src && sc.Scan() {
 			if f.rules.Pass(sc.Bytes()) {
 				match++
@@ -479,7 +480,8 @@ func (f *Filtered) Iterate(from int64, fn func(int64, Line) bool) error {
 	// checkpoint is only a shortcut, so fall back to scanning from the start.
 	start, _ := f.lookup(from)
 
-	sc := lines.NewScanner(f.src, start.off, f.base.Size(), f.opt.Block)
+	sc := lines.Borrow(f.src, start.off, f.base.Size(), f.opt.Block)
+	defer sc.Release()
 	match, src := start.idx, start.src
 	for sc.Scan() {
 		if f.rules.Pass(sc.Bytes()) {
