@@ -14,6 +14,10 @@
 // next match after a gigabyte of non-matching lines would mean reading that
 // gigabyte every time.
 //
+// Two neighbouring entries with the same key have no item between them. A
+// scan for a narrower predicate than the one that built a table can use that
+// to jump over whole runs of the file.
+//
 // The table is capped. When it fills, every second entry is dropped and both
 // strides double, so memory is O(1) in the size of the file.
 package checkpoint
@@ -168,4 +172,14 @@ func (t *Table) LookupSrc(src int64) (Entry, bool) {
 		return Entry{}, false
 	}
 	return t.at(i), true
+}
+
+// Entries returns a copy of every entry, in order, for a reader that walks
+// them alongside a scan rather than looking them up one at a time.
+func (t *Table) Entries() []Entry {
+	out := make([]Entry, len(t.offs))
+	for i := range out {
+		out[i] = t.at(i)
+	}
+	return out
 }

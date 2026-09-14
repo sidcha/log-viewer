@@ -235,3 +235,31 @@ func TestColorRoundTripsThroughHue(t *testing.T) {
 		}
 	}
 }
+
+func TestNarrows(t *testing.T) {
+	a, b, c := mustCompile(t, "a", Sensitive), mustCompile(t, "b", Sensitive), mustCompile(t, "c", Sensitive)
+	rule := func(act Action, m Matcher) Rule { return Rule{Action: act, M: m, Enabled: true} }
+
+	onlyA := NewSet().Add(rule(Only, a))
+	onlyAB := onlyA.Add(rule(Only, b))
+	cases := []struct {
+		name     string
+		old, new *Set
+		want     bool
+	}{
+		{"first only rule", NewSet(), onlyA, true},
+		{"add a never rule", onlyA, onlyA.Add(rule(Never, c)), true},
+		{"remove an only rule", onlyAB, onlyA, true},
+		{"disable an only rule", onlyAB, onlyAB.Toggle(1), true},
+		{"add an only rule", onlyA, onlyAB, false},
+		{"remove the last only rule", onlyA, NewSet(), false},
+		{"remove a never rule", onlyA.Add(rule(Never, c)), onlyA, false},
+		{"add a highlight", onlyA, onlyA.Add(rule(Highlight, b)), true},
+		{"same pattern recompiled", onlyA, NewSet().Add(rule(Only, mustCompile(t, "a", Sensitive))), false},
+	}
+	for _, c := range cases {
+		if got := c.new.Narrows(c.old); got != c.want {
+			t.Errorf("%s: Narrows = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -224,6 +224,45 @@ func (s *Set) Pass(line []byte) bool {
 	return ok
 }
 
+// Narrows reports whether every line s shows, old shows too: whether s can
+// only take lines away. A scan for s can then skip whatever old already
+// ruled out.
+//
+// It compares rules by their compiled matcher, so a pattern recompiled under
+// a different case mode is a different rule. That errs towards reporting a
+// widening, which only costs a full scan.
+func (s *Set) Narrows(old *Set) bool {
+	sNever, sOnly := s.enabled(Never), s.enabled(Only)
+	for m := range old.enabled(Never) {
+		if !sNever[m] {
+			return false // a line old hid may now be shown
+		}
+	}
+	oldOnly := old.enabled(Only)
+	if len(oldOnly) == 0 {
+		return true
+	}
+	if len(sOnly) == 0 {
+		return false // old kept only some lines; s keeps all of them
+	}
+	for m := range sOnly {
+		if !oldOnly[m] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Set) enabled(a Action) map[Matcher]bool {
+	out := map[Matcher]bool{}
+	for _, r := range s.rules {
+		if r.Enabled && r.Action == a {
+			out[r.M] = true
+		}
+	}
+	return out
+}
+
 // Fingerprint identifies the filtering behaviour of the set. A scan is
 // restarted when it changes and left alone when it does not, so adding a
 // highlight does not throw away a filter scan in progress.

@@ -77,6 +77,20 @@ func TestCollapseKeepsTheCapAndTheBounds(t *testing.T) {
 	}
 }
 
+func TestEntriesAreInOrder(t *testing.T) {
+	tb := New(1024, 50, 1<<10, true)
+	sparse(tb)
+	ents := tb.Entries()
+	if len(ents) != tb.Len() {
+		t.Fatalf("Entries returned %d of %d", len(ents), tb.Len())
+	}
+	for i := 1; i < len(ents); i++ {
+		if ents[i].Off <= ents[i-1].Off || ents[i].Key < ents[i-1].Key || ents[i].Src < ents[i-1].Src {
+			t.Fatalf("entries %d and %d out of order: %+v %+v", i-1, i, ents[i-1], ents[i])
+		}
+	}
+}
+
 func TestResetRestoresStrides(t *testing.T) {
 	tb := New(2, 16, 4, false)
 	for k := int64(0); k < 100; k++ {

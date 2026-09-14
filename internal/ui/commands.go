@@ -475,9 +475,12 @@ func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode
 // The filter scan is only restarted when the filtering behaviour actually
 // changed. Adding a highlight to a set that is already filtering leaves the
 // scan alone, which on a large file is the difference between instant and
-// minutes.
+// minutes. A change that can only hide more lines -- a never rule added, an
+// only rule dropped -- restarts it, but the new scan skips every stretch where
+// the old one found nothing.
 func (a *App) applyRules(next *filter.Set, preserve bool) {
-	sameFilter := a.rules != nil && a.rules.Fingerprint() == next.Fingerprint()
+	prev := a.rules
+	sameFilter := prev != nil && prev.Fingerprint() == next.Fingerprint()
 	a.rules = next
 	a.syncMarks()
 
@@ -490,8 +493,12 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 		anchor = a.anchorSource()
 	}
 
+	var narrowing *view.Narrowing
 	if a.filt != nil {
 		a.filt.Close()
+		if next.Narrows(prev) {
+			narrowing = a.filt.Narrowing()
+		}
 		a.filt = nil
 		a.filtPtr.Store(nil)
 	}
@@ -502,11 +509,12 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 
 	if next.Filtering() {
 		a.filt = view.NewFiltered(a.src, a.idx, next, view.FilteredOptions{
-			Block:   a.cfg.Int("block-size"),
-			MaxLine: a.cfg.Int("max-line-bytes"),
-			Poll:    a.cfg.Dur("scan-poll"),
-			Advise:  a.cfg.Str("page-cache-advise"),
-			Notify:  a.Wake,
+			Block:     a.cfg.Int("block-size"),
+			MaxLine:   a.cfg.Int("max-line-bytes"),
+			Poll:      a.cfg.Dur("scan-poll"),
+			Advise:    a.cfg.Str("page-cache-advise"),
+			Notify:    a.Wake,
+			Narrowing: narrowing,
 		})
 		a.filtPtr.Store(a.filt)
 	}

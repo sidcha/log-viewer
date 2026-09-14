@@ -45,7 +45,44 @@ type FilteredOptions struct {
 	CheckpointBytes int64
 	// Notify is called after every published batch. It must not block.
 	Notify func()
+	// Narrowing, when set, is what the view being replaced knew about where
+	// its matches were not. Only pass it when the new rules can only take
+	// lines away (filter.Set.Narrows): the scan then jumps over every stretch
+	// the old view had no match in.
+	Narrowing *Narrowing
 }
+
+// Narrowing is a filtered view's record of where it found nothing.
+type Narrowing struct {
+	ents []checkpoint.Entry
+	gen  uint64
+	next int // the first entry the scan has not yet passed
+}
+
+// skip returns the run of entries with no match between them that starts at
+// off, the last being where a scan standing at off may resume; nil when
+// there is nothing to jump over. off must be a line start at or after every
+// earlier call's.
+func (n *Narrowing) skip(off int64) []checkpoint.Entry {
+	for n.next < len(n.ents) && n.ents[n.next].Off < off {
+		n.next++
+	}
+	if n.next >= len(n.ents) || n.ents[n.next].Off != off {
+		return nil
+	}
+	start, end := n.next, n.next
+	for end+1 < len(n.ents) && n.ents[end+1].Key == n.ents[start].Key {
+		end++
+	}
+	if end == start {
+		return nil
+	}
+	n.next = end
+	return n.ents[start+1 : end+1]
+}
+
+// exhausted reports whether the scan is past everything the old view saw.
+func (n *Narrowing) exhausted() bool { return n.next >= len(n.ents)-1 }
 
 // Filtered is a view of the lines that survive a filter rules.
 //
@@ -61,13 +98,15 @@ type Filtered struct {
 	rules *filter.Set
 	opt   FilteredOptions
 
-	mu      sync.RWMutex
-	ck      *checkpoint.Table
-	n       int64 // matches found so far
-	scanned int64 // bytes consumed
-	srcLine int64 // source lines consumed
-	done    bool
-	err     error
+	mu       sync.RWMutex
+	ck       *checkpoint.Table
+	gen      uint64 // index generation the table was built under
+	n        int64  // matches found so far
+	scanned  int64  // bytes consumed
+	srcLine  int64  // source lines consumed
+	examined int64  // source lines the predicate actually ran on
+	done     bool
+	err      error
 
 	rd  *lines.Reader
 	pos posCache
@@ -111,6 +150,7 @@ func NewFiltered(src *source.Source, base *index.Index, rules *filter.Set, opt F
 		rules: rules,
 		opt:   opt,
 		ck:    checkpoint.New(ckStride, opt.CheckpointBytes, ckMax, true),
+		gen:   base.Gen(),
 		rd:    rd,
 		nudge: make(chan struct{}, 1),
 	}
@@ -168,6 +208,14 @@ func (f *Filtered) SourceLinesScanned() int64 {
 	return f.srcLine
 }
 
+// Narrowing captures where this view found no matches, for a view with
+// narrower rules to skip. It reflects the scan so far.
+func (f *Filtered) Narrowing() *Narrowing {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return &Narrowing{ents: f.ck.Entries(), gen: f.gen}
+}
+
 // pending is a position the scan found worth recording, held until the next
 // publish so the lock is taken once per batch.
 type pending struct {
@@ -178,7 +226,7 @@ type pending struct {
 // scanState is how far the scan has got. Only the scan goroutine writes it;
 // publish copies it into the fields readers see.
 type scanState struct {
-	n, pos, src int64
+	n, pos, src, examined int64
 }
 
 // run is the background scan. It follows the file: when it reaches the end it
@@ -186,9 +234,17 @@ type scanState struct {
 func (f *Filtered) run(ctx context.Context) {
 	defer f.wg.Done()
 
+	f.mu.RLock()
+	gen := f.gen
+	f.mu.RUnlock()
+
+	narrow := f.opt.Narrowing
+	if narrow != nil && narrow.gen != gen {
+		narrow = nil
+	}
+
 	var (
 		st   scanState
-		gen  = f.base.Gen()
 		sc   = f.newScanner(0)
 		pend = make([]pending, 0, flushMatches)
 		gap  = f.opt.CheckpointBytes / 2
@@ -210,8 +266,9 @@ func (f *Filtered) run(ctx context.Context) {
 		if g := f.base.Gen(); g != gen {
 			// The file was truncated or rotated: start over.
 			gen = g
-			f.reset()
+			f.reset(g)
 			st, last = scanState{}, int64(-1)<<62
+			narrow = nil
 			sc = f.newScanner(0)
 		}
 
@@ -225,6 +282,27 @@ func (f *Filtered) run(ctx context.Context) {
 				break
 			}
 			off := sc.Offset()
+			if narrow != nil {
+				if run := narrow.skip(off); run != nil {
+					// Nothing the old rules showed lies in this run, so
+					// nothing the new ones show can. Keep its positions,
+					// so the walk across it stays bounded here too.
+					for _, e := range run {
+						pend = append(pend, pending{key: st.n, off: e.Off, src: e.Src})
+					}
+					to := run[len(run)-1]
+					st.src, st.pos, last = to.Src, to.Off, to.Off
+					sc.SeekTo(to.Off)
+					if len(pend) >= flushMatches {
+						flush(false)
+					}
+					continue
+				}
+				if narrow.exhausted() {
+					narrow = nil
+				}
+			}
+			st.examined++
 			if f.rules.Pass(sc.Bytes()) {
 				pend = append(pend, pending{key: st.n, off: off, src: st.src, item: true})
 				st.n++
@@ -288,14 +366,16 @@ func (f *Filtered) publish(pend []pending, st scanState, done bool) int64 {
 	f.n = st.n
 	f.scanned = st.pos
 	f.srcLine = st.src
+	f.examined = st.examined
 	f.done = done
 	return f.ck.ByteStride()
 }
 
-func (f *Filtered) reset() {
+func (f *Filtered) reset(gen uint64) {
 	f.mu.Lock()
 	f.ck.Reset()
-	f.n, f.scanned, f.srcLine = 0, 0, 0
+	f.gen = gen
+	f.n, f.scanned, f.srcLine, f.examined = 0, 0, 0, 0
 	f.done = false
 	// The position cache is deliberately not touched here: it belongs to the
 	// goroutine calling At, and its entries carry the index generation, so a
