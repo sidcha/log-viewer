@@ -65,6 +65,29 @@ func TestPagerDefaultsYieldToTheUser(t *testing.T) {
 	}
 }
 
+// TestPagerDefaultsYieldToTheCommandLine: `core.pager = "lv --set
+// quit-if-one-screen=off"` is the documented way to keep the setting in one
+// place, so the flag has to count as the user's choice.
+func TestPagerDefaultsYieldToTheCommandLine(t *testing.T) {
+	cfg, err := config.Load(config.LoadOptions{NoUser: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := options{sets: stringList{"quit-if-one-screen=off"}}
+	if err := applyFlagOverrides(cfg, &opt); err != nil {
+		t.Fatal(err)
+	}
+
+	applyPagerDefaults(cfg)
+
+	if cfg.Bool("quit-if-one-screen") {
+		t.Error("the pager default overrode --set")
+	}
+	if got := cfg.Origin("quit-if-one-screen"); got != config.OriginCommandLine {
+		t.Errorf("origin = %q, want the command line", got)
+	}
+}
+
 // TestOneScreenDumpIsRefusedWithoutATerminal, since there is no screen to
 // measure and nothing to decide.
 func TestOneScreenDumpIsRefusedWithoutATerminal(t *testing.T) {

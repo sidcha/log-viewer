@@ -196,9 +196,21 @@ func (c *Config) Dur(name string) time.Duration {
 	return 0
 }
 
-// Set overrides a setting, validating it the same way the parser does. Command
-// line flags go through here.
-func (c *Config) Set(name, value string) error {
+// Origins of a value that was not read from a file.
+const (
+	// OriginCommandLine is a value given as a flag.
+	OriginCommandLine = "<command line>"
+	// OriginSession is a value changed while lv was running.
+	OriginSession = "<session>"
+)
+
+// Set overrides a setting during a session, validating it the same way the
+// parser does.
+func (c *Config) Set(name, value string) error { return c.SetFrom(name, value, OriginSession) }
+
+// SetFrom overrides a setting and records where the value came from, so
+// Origin can tell a value somebody chose from a built-in default.
+func (c *Config) SetFrom(name, value, origin string) error {
 	s, ok := settingIndex[name]
 	if !ok {
 		return fmt.Errorf("unknown setting %q", name)
@@ -207,6 +219,7 @@ func (c *Config) Set(name, value string) error {
 		return err
 	}
 	c.values[name] = value
+	c.origins[name] = origin
 	return nil
 }
 
@@ -354,10 +367,9 @@ func (c *Config) directive(st stmt) error {
 		if len(w) != 3 {
 			return st.errf("usage: set <name> <value>")
 		}
-		if err := c.Set(w[1], w[2]); err != nil {
+		if err := c.SetFrom(w[1], w[2], st.File); err != nil {
 			return st.errf("%v", err)
 		}
-		c.origins[w[1]] = st.File
 
 	case "bind":
 		if len(w) < 3 {

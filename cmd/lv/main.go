@@ -410,26 +410,26 @@ func applyFlagOverrides(cfg *config.Config, opt *options) error {
 		if !ok {
 			return fmt.Errorf("--set expects name=value, got %q", kv)
 		}
-		if err := cfg.Set(name, value); err != nil {
+		if err := cfg.SetFrom(name, value, config.OriginCommandLine); err != nil {
 			return err
 		}
 	}
 	if opt.follow {
-		_ = cfg.Set("follow", "on")
+		_ = cfg.SetFrom("follow", "on", config.OriginCommandLine)
 	}
 	if opt.wrap {
-		_ = cfg.Set("wrap", "on")
+		_ = cfg.SetFrom("wrap", "on", config.OriginCommandLine)
 	}
 	if opt.lineNums {
-		_ = cfg.Set("line-numbers", "on")
+		_ = cfg.SetFrom("line-numbers", "on", config.OriginCommandLine)
 	}
 	if opt.profile != "" {
-		if err := cfg.Set("profile", opt.profile); err != nil {
+		if err := cfg.SetFrom("profile", opt.profile, config.OriginCommandLine); err != nil {
 			return err
 		}
 	}
 	if opt.background != "" {
-		if err := cfg.Set("background", opt.background); err != nil {
+		if err := cfg.SetFrom("background", opt.background, config.OriginCommandLine); err != nil {
 			return err
 		}
 	}
