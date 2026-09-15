@@ -343,6 +343,11 @@ func (a *App) setOption(args []string) {
 		a.errorf("unknown setting %q", name)
 		return
 	}
+	changing := len(args) > 1 || spec.IsBool()
+	if spec.Scope == config.Startup && changing {
+		a.errorf("%s only takes effect at startup; set it in a config file or with --set", name)
+		return
+	}
 
 	if len(args) == 1 {
 		if !spec.IsBool() {

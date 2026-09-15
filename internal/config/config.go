@@ -32,51 +32,64 @@ const (
 	kDur
 )
 
+// Scope is when a setting can take effect.
+type Scope int
+
+const (
+	// Live settings can be changed while lv is running, with :set.
+	Live Scope = iota
+	// Startup settings shape things built once, as lv starts -- the index,
+	// the screen, the file watch -- and can only be set in a configuration
+	// file or with --set.
+	Startup
+)
+
 // Setting describes one `set` key.
 type Setting struct {
-	Name string
-	Kind kind
-	Def  string
-	Enum []string
-	Help string
+	Name  string
+	Kind  kind
+	Def   string
+	Enum  []string
+	Scope Scope
+	Help  string
 }
 
 // Settings is the complete set of recognised options. Anything else in a
 // `set` directive is an error, so typos surface at startup instead of silently
 // doing nothing.
 var Settings = []Setting{
-	{"follow", kBool, "off", nil, "start pinned to the end of the file"},
-	{"wrap", kBool, "off", nil, "wrap long lines instead of truncating"},
-	{"line-numbers", kBool, "off", nil, "show a source line-number gutter"},
-	{"ansi", kBool, "on", nil, "draw the colours a log was captured with"},
-	{"status-line", kEnum, "auto", []string{"auto", "on", "off"}, "when to draw the status line"},
-	{"alt-screen", kBool, "on", nil, "draw on the alternate screen, restoring the terminal on exit"},
-	{"quit-if-one-screen", kBool, "off", nil, "print and exit when the whole input fits on the screen"},
-	{"ask-save", kEnum, "auto", []string{"auto", "on", "off"}, "ask before quitting whether to keep piped input"},
-	{"ask-save-rules", kBool, "on", nil, "ask before quitting whether to save the rules"},
-	{"case", kEnum, "smart", []string{"smart", "sensitive", "insensitive"}, "pattern case sensitivity"},
-	{"tab-width", kInt, "8", nil, "columns per tab stop"},
-	{"scroll-step", kInt, "1", nil, "lines moved by up/down"},
-	{"h-scroll-step", kInt, "8", nil, "columns moved by left/right"},
-	{"page-overlap", kInt, "2", nil, "lines kept on screen when paging"},
-	{"watch-backstop", kDur, "2s", nil, "poll interval alongside kernel change notifications"},
-	{"watch-fallback", kDur, "200ms", nil, "poll interval when notifications are unavailable"},
-	{"scan-poll", kDur, "200ms", nil, "how often a caught-up filter scan looks for new data"},
-	{"block-size", kInt, "1048576", nil, "bytes read per syscall"},
-	{"max-line-bytes", kInt, "1048576", nil, "how much of one line is retained"},
-	{"max-scan-bytes", kInt, "4096", nil, "bytes of a line examined for highlighting"},
-	{"index-stride", kInt, "1024", nil, "lines between index checkpoints"},
-	{"max-checkpoints", kInt, "524288", nil, "line-index checkpoint ceiling (16 bytes each) before the stride doubles"},
-	{"page-cache-advise", kEnum, "auto", []string{"auto", "on", "off"}, "hand scanned pages back to the kernel"},
-	{"profile", kStr, "", nil, "force a syntax profile instead of detecting one"},
-	{"mouse", kBool, "on", nil, "enable mouse wheel scrolling"},
-	{"gutter", kStr, "│ ", nil, "separator drawn after the line-number gutter"},
-	{"message-timeout", kDur, "4s", nil, "how long a status message stays up"},
-	{"scroll-off", kInt, "3", nil, "lines of context kept above and below the cursor"},
-	{"cursor-line", kBool, "on", nil, "mark the line the cursor is on"},
-	{"clipboard-command", kStr, "", nil, "external clipboard program; empty uses the terminal escape"},
-	{"stop-producer", kBool, "on", nil, "on exit, stop the process piping into lv"},
-	{"background", kEnum, "auto", []string{"auto", "dark", "light"}, "terminal background; auto asks the terminal"},
+	{"follow", kBool, "off", nil, Startup, "start pinned to the end of the file"},
+	{"wrap", kBool, "off", nil, Live, "wrap long lines instead of truncating"},
+	{"line-numbers", kBool, "off", nil, Live, "show a source line-number gutter"},
+	{"ansi", kBool, "on", nil, Live, "draw the colours a log was captured with"},
+	{"status-line", kEnum, "auto", []string{"auto", "on", "off"}, Live, "when to draw the status line"},
+	{"alt-screen", kBool, "on", nil, Startup, "draw on the alternate screen, restoring the terminal on exit"},
+	{"quit-if-one-screen", kBool, "off", nil, Startup, "print and exit when the whole input fits on the screen"},
+	{"ask-save", kEnum, "auto", []string{"auto", "on", "off"}, Live, "ask before quitting whether to keep piped input"},
+	{"ask-save-rules", kBool, "on", nil, Live, "ask before quitting whether to save the rules"},
+	{"case", kEnum, "smart", []string{"smart", "sensitive", "insensitive"}, Live, "pattern case sensitivity"},
+	{"tab-width", kInt, "8", nil, Live, "columns per tab stop"},
+	{"scroll-step", kInt, "1", nil, Live, "lines moved by up/down"},
+	{"h-scroll-step", kInt, "8", nil, Live, "columns moved by left/right"},
+	{"page-overlap", kInt, "2", nil, Live, "lines kept on screen when paging"},
+	{"watch-backstop", kDur, "2s", nil, Startup, "poll interval alongside kernel change notifications"},
+	{"watch-fallback", kDur, "200ms", nil, Startup, "poll interval when notifications are unavailable"},
+	{"scan-poll", kDur, "200ms", nil, Startup, "how often a caught-up filter scan looks for new data"},
+	{"block-size", kInt, "1048576", nil, Startup, "bytes read per syscall"},
+	{"max-line-bytes", kInt, "1048576", nil, Startup, "how much of one line is retained"},
+	{"max-scan-bytes", kInt, "4096", nil, Live, "bytes of a line examined for highlighting"},
+	{"index-stride", kInt, "1024", nil, Startup, "lines between index checkpoints"},
+	{"max-checkpoints", kInt, "524288", nil, Startup, "line-index checkpoint ceiling (16 bytes each) before the stride doubles"},
+	{"page-cache-advise", kEnum, "auto", []string{"auto", "on", "off"}, Startup, "hand scanned pages back to the kernel"},
+	{"profile", kStr, "", nil, Startup, "force a syntax profile instead of detecting one"},
+	{"mouse", kBool, "on", nil, Live, "enable mouse wheel scrolling"},
+	{"gutter", kStr, "│ ", nil, Live, "separator drawn after the line-number gutter"},
+	{"message-timeout", kDur, "4s", nil, Live, "how long a status message stays up"},
+	{"scroll-off", kInt, "3", nil, Live, "lines of context kept above and below the cursor"},
+	{"cursor-line", kBool, "on", nil, Live, "mark the line the cursor is on"},
+	{"clipboard-command", kStr, "", nil, Live, "external clipboard program; empty uses the terminal escape"},
+	{"stop-producer", kBool, "on", nil, Live, "on exit, stop the process piping into lv"},
+	{"background", kEnum, "auto", []string{"auto", "dark", "light"}, Startup, "terminal background; auto asks the terminal"},
 }
 
 var settingIndex = func() map[string]*Setting {
@@ -658,7 +671,11 @@ func (c *Config) Dump() string {
 
 	b.WriteString("\n# settings\n")
 	for _, s := range Settings {
-		fmt.Fprintf(&b, "set %-18s %-12s # %s\n", s.Name, quoteWord(c.values[s.Name]), s.Help)
+		help := s.Help
+		if s.Scope == Startup {
+			help += " (at startup)"
+		}
+		fmt.Fprintf(&b, "set %-18s %-12s # %s\n", s.Name, quoteWord(c.values[s.Name]), help)
 	}
 
 	b.WriteString("\n# styles\n")
