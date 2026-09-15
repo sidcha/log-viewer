@@ -60,7 +60,25 @@ type Engine struct {
 
 	spans []Span
 	locs  [][2]int
+
+	// cache holds the syntax spans of lines drawn recently. A frame repaints
+	// every visible line, and running every profile rule over each of them
+	// again when nothing moved is most of what a frame costs.
+	cache map[LineKey][]Span
 }
+
+// LineKey names a line's bytes: where it starts, how long it was when read,
+// and the index generation, which changes when the file is replaced. A
+// partial last line that grows gets a new key.
+type LineKey struct {
+	Gen uint64
+	Off int64
+	Len int
+}
+
+// maxCached bounds the span cache; it is dropped wholesale when it fills,
+// which costs one frame's recomputation now and then.
+const maxCached = 1024
 
 // NewEngine returns an engine with sane bounds.
 func NewEngine(maxScan, maxMatches int) *Engine {
@@ -92,6 +110,24 @@ func (e *Engine) SyntaxSpans(line []byte) []Span {
 	}
 	return e.spans
 }
+
+// SyntaxSpansAt is SyntaxSpans for a line with a stable identity, reusing
+// the answer from the last time the same line was drawn. The result must not
+// be modified.
+func (e *Engine) SyntaxSpansAt(key LineKey, line []byte) []Span {
+	if spans, ok := e.cache[key]; ok {
+		return spans
+	}
+	spans := append([]Span(nil), e.SyntaxSpans(line)...)
+	if e.cache == nil || len(e.cache) >= maxCached {
+		e.cache = make(map[LineKey][]Span, maxCached)
+	}
+	e.cache[key] = spans
+	return spans
+}
+
+// Forget drops every cached span, for when the profile or the bounds change.
+func (e *Engine) Forget() { e.cache = nil }
 
 // MarkSpans returns where the rules the user added matched.
 func (e *Engine) MarkSpans(line []byte) []Span {

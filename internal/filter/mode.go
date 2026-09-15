@@ -277,8 +277,19 @@ func (p *pcreMatcher) Match(line []byte) bool {
 	return err == nil && ok
 }
 
+// decoded is a line decoded to runes, with where each rune started.
+type decoded struct {
+	runes   []rune
+	offsets []int
+}
+
+var decodedBufs = sync.Pool{New: func() any { return new(decoded) }}
+
 func (p *pcreMatcher) Find(line []byte, dst [][2]int, limit int) [][2]int {
-	runes, offsets := decodeWithOffsets(line)
+	d := decodedBufs.Get().(*decoded)
+	defer decodedBufs.Put(d)
+	d.decode(line)
+	runes, offsets := d.runes, d.offsets
 
 	m, err := p.re.FindRunesMatch(runes)
 	for err == nil && m != nil {
@@ -307,21 +318,20 @@ func decodeRunes(dst []rune, line []byte) []rune {
 	return dst
 }
 
-// decodeWithOffsets also records where each rune started, so a match reported
-// in rune positions can be turned back into byte positions for drawing.
-func decodeWithOffsets(line []byte) ([]rune, []int) {
-	runes := make([]rune, 0, len(line))
-	offsets := make([]int, 0, len(line)+1)
+// decode also records where each rune started, so a match reported in rune
+// positions can be turned back into byte positions for drawing.
+func (d *decoded) decode(line []byte) {
+	d.runes, d.offsets = d.runes[:0], d.offsets[:0]
 	for i := 0; i < len(line); {
 		r, size := utf8.DecodeRune(line[i:])
 		if size <= 0 {
 			size = 1
 		}
-		runes = append(runes, r)
-		offsets = append(offsets, i)
+		d.runes = append(d.runes, r)
+		d.offsets = append(d.offsets, i)
 		i += size
 	}
-	return runes, append(offsets, len(line))
+	d.offsets = append(d.offsets, len(line))
 }
 
 func byteAt(offsets []int, runeIndex int) int {

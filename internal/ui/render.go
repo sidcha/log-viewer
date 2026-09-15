@@ -176,7 +176,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 		rowBase = base.Background(bg)
 	}
 
-	a.applyStyles(text, idx, base)
+	a.applyStyles(text, idx, ln.Off, base)
 	a.markCursorLine(idx)
 	a.markSelection(idx, len(ln.Text))
 	if idx == a.cursorLine() {
@@ -217,11 +217,11 @@ func (a *App) flatStyles(st tcell.Style) {
 // who gets the last word: lv's guess at the shape of the line, then the
 // colours the line was written with, then the rules the user added, then the
 // search.
-func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
+func (a *App) applyStyles(text []byte, idx, off int64, base tcell.Style) {
 	a.flatStyles(base)
 	n := a.lay.cols()
 
-	a.paintSpans(a.eng.SyntaxSpans(text), n)
+	a.paintSpans(a.eng.SyntaxSpansAt(highlight.LineKey{Gen: a.idx.Gen(), Off: off, Len: len(text)}, text), n)
 	a.paintANSI(text, n)
 	a.paintSpans(a.eng.MarkSpans(text), n)
 
@@ -232,7 +232,6 @@ func (a *App) applyStyles(text []byte, idx int64, base tcell.Style) {
 		}
 		a.paint(a.search.m, text, st, n)
 	}
-
 }
 
 func (a *App) paintSpans(spans []highlight.Span, n int) {

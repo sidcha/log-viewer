@@ -141,33 +141,13 @@ func writeLine(src *source.Source, w *bufio.Writer, ln Line) (int64, error) {
 	}
 }
 
+// copyRange copies bytes [off, end) of the source through w's own buffer.
 func copyRange(src *source.Source, w *bufio.Writer, off, end int64) (int64, error) {
-	buf := make([]byte, 1<<16)
-	var total int64
-	for off < end {
-		n := int64(len(buf))
-		if rem := end - off; rem < n {
-			n = rem
-		}
-		got, err := src.ReadAt(buf[:n], off)
-		if got > 0 {
-			if _, werr := w.Write(buf[:got]); werr != nil {
-				return total, werr
-			}
-			total += int64(got)
-			off += int64(got)
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return total, err
-		}
-		if got == 0 {
-			return total, fmt.Errorf("short read at offset %d", off)
-		}
+	n, err := w.ReadFrom(io.NewSectionReader(src, off, end-off))
+	if err == nil && n != end-off {
+		err = fmt.Errorf("short read at offset %d", off+n)
 	}
-	return total, nil
+	return n, err
 }
 
 func sameFile(a, b string) (bool, error) {
