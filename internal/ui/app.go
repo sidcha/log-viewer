@@ -50,18 +50,20 @@ type App struct {
 	eng *highlight.Engine
 	lay *layout
 
-	top      int64
-	cur      int64 // cursor line, in view coordinates
-	curCol   int   // cursor byte offset within that line
-	wantCol  int   // column to return to after moving between lines
-	sel      selection
-	hoff     int
-	follow   bool
-	wrap     bool
-	lineNums bool
-	bypass   bool
-	ansi     bool
-	statusOn string
+	top     int64
+	cur     int64 // cursor line, in view coordinates
+	curCol  int   // cursor byte offset within that line
+	wantCol int   // column to return to after moving between lines
+	sel     selection
+	hoff    int
+	follow  bool
+	bypass  bool
+
+	// opt is the settings, resolved; read it through opts, which refreshes it
+	// whenever the configuration has changed since.
+	opt     config.Options
+	optVer  uint64
+	mouseOn bool
 
 	search  searchState
 	prompt  *prompt
@@ -135,24 +137,21 @@ type searchState struct {
 
 // New builds an App. The caller owns the screen's lifetime.
 func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.Index, profile *highlight.Profile) *App {
-	block := cfg.Int("block-size")
-	maxLine := cfg.Int("max-line-bytes")
+	opt := cfg.Options()
 
 	a := &App{
-		scr:          scr,
-		cfg:          cfg,
-		src:          src,
-		idx:          idx,
-		base:         view.NewBase(src, idx, block, maxLine),
-		rules:        filter.NewSet(),
-		eng:          highlight.NewEngine(cfg.Int("max-scan-bytes"), 64),
-		lay:          newLayout(cfg.Int("tab-width")),
-		follow:       cfg.Bool("follow"),
-		everFollowed: cfg.Bool("follow"),
-		wrap:         cfg.Bool("wrap"),
-		lineNums:     cfg.Bool("line-numbers"),
-		ansi:         cfg.Bool("ansi"),
-		statusOn:     cfg.Str("status-line"),
+		scr:   scr,
+		cfg:   cfg,
+		src:   src,
+		idx:   idx,
+		base:  view.NewBase(src, idx, opt.BlockSize, opt.MaxLineBytes),
+		rules: filter.NewSet(),
+		eng:   highlight.NewEngine(opt.MaxScanBytes, 64),
+		lay:   newLayout(opt.TabWidth),
+		// Following is where the session starts, not a setting it tracks:
+		// scrolling away turns it off, and a later :set must not undo that.
+		follow:       opt.Follow,
+		everFollowed: opt.Follow,
 		post:         make(chan func(), 32),
 		wake:         make(chan struct{}, 1),
 		done:         make(chan struct{}),
@@ -160,10 +159,11 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 	}
 	a.eng.Profile = profile
 	a.search.cur = -1
+	a.reconfigure()
 
 	set := a.rules
 	for _, p := range cfg.Presets() {
-		m, err := filter.Compile(p.Pattern, p.Mode, cfg.Case())
+		m, err := filter.Compile(p.Pattern, p.Mode, opt.Case)
 		if err != nil {
 			a.errorf("rule %q: %v", p.Pattern, err)
 			continue
@@ -172,6 +172,41 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 	}
 	a.applyRules(set, false)
 	return a
+}
+
+// opts returns the settings, re-resolving them if anything changed since they
+// were last read. Every setting the viewer uses is read through here, so there
+// is one source of truth and a :set takes effect everywhere at once.
+func (a *App) opts() *config.Options {
+	if a.cfg.Version() != a.optVer {
+		a.reconfigure()
+	}
+	return &a.opt
+}
+
+// reconfigure resolves the settings and hands them to the parts that keep
+// their own copy.
+func (a *App) reconfigure() {
+	a.opt = a.cfg.Options()
+	a.optVer = a.cfg.Version()
+	o := &a.opt
+
+	a.lay.setTab(o.TabWidth)
+	if a.eng.MaxScan != o.MaxScanBytes && o.MaxScanBytes > 0 {
+		a.eng.MaxScan = o.MaxScanBytes
+		a.eng.Forget()
+	}
+	if o.Mouse != a.mouseOn {
+		if o.Mouse {
+			a.scr.EnableMouse(tcell.MouseButtonEvents)
+		} else {
+			a.scr.DisableMouse()
+		}
+		a.mouseOn = o.Mouse
+	}
+	if o.Wrap {
+		a.hoff = 0
+	}
 }
 
 // Wake asks the event loop to repaint, and tells any filter scan that more of
@@ -405,10 +440,10 @@ func (a *App) pendingKeys() string {
 }
 
 func (a *App) mouse(ev *tcell.EventMouse) {
-	if !a.cfg.Bool("mouse") {
+	if !a.opts().Mouse {
 		return
 	}
-	step := int64(a.cfg.Int("scroll-step") * 3)
+	step := int64(a.opts().ScrollStep * 3)
 	if step < 1 {
 		step = 3
 	}
@@ -519,13 +554,13 @@ func (a *App) anchorSource() int64 {
 func (a *App) infof(format string, args ...any) {
 	a.msg = fmt.Sprintf(format, args...)
 	a.msgStyle = a.cfg.Style("status")
-	a.msgUntil = time.Now().Add(a.cfg.Dur("message-timeout"))
+	a.msgUntil = time.Now().Add(a.opts().MessageTimeout)
 }
 
 func (a *App) errorf(format string, args ...any) {
 	a.msg = fmt.Sprintf(format, args...)
 	a.msgStyle = a.cfg.Style("status.error")
-	a.msgUntil = time.Now().Add(a.cfg.Dur("message-timeout"))
+	a.msgUntil = time.Now().Add(a.opts().MessageTimeout)
 }
 
 func (a *App) clearMsg() {

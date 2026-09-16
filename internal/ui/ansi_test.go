@@ -71,7 +71,6 @@ func TestANSIOffLeavesTheTextAlone(t *testing.T) {
 	if err := a.cfg.Set("ansi", "off"); err != nil {
 		t.Fatal(err)
 	}
-	a.syncSettings()
 	a.draw()
 
 	if got := fg(rowStyles(scr, 0)[6]); got == tcell.PaletteColor(1) {

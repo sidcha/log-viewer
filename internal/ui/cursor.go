@@ -30,7 +30,7 @@ func (a *App) cursorLine() int64 {
 
 // scrolloff is how many lines of context are kept above and below the cursor.
 func (a *App) scrolloff() int {
-	off := a.cfg.Int("scroll-off")
+	off := a.opts().ScrollOff
 	rows := a.contentRows()
 	if max := (rows - 1) / 2; off > max {
 		off = max
@@ -114,7 +114,7 @@ func (a *App) setColumn(byteOff int) {
 
 // followColumn scrolls sideways the minimum needed to keep the cursor visible.
 func (a *App) followColumn() {
-	if a.wrap {
+	if a.opts().Wrap {
 		a.hoff = 0
 		return
 	}
@@ -122,7 +122,7 @@ func (a *App) followColumn() {
 	if width < 1 {
 		return
 	}
-	col := displayColumn(a.cursorText(), a.curCol, a.cfg.Int("tab-width"))
+	col := displayColumn(a.cursorText(), a.curCol, a.opts().TabWidth)
 	if col < a.hoff {
 		a.hoff = col
 	}

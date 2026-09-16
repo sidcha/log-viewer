@@ -11,7 +11,7 @@ import (
 
 // currentRuleFile captures what would be written right now.
 func (a *App) currentRuleFile() *ruleset.File {
-	return ruleset.From(a.rules, a.cfg.Case())
+	return ruleset.From(a.rules, a.opts().Case)
 }
 
 // rulesDirty reports whether there is anything worth saving that is not already
@@ -42,7 +42,7 @@ func (a *App) ApplyRuleFile(f *ruleset.File, path string) error {
 	if f == nil {
 		return nil
 	}
-	set, cs, err := f.Set(a.cfg.Case())
+	set, cs, err := f.Set(a.opts().Case)
 	if err != nil {
 		return err
 	}

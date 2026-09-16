@@ -26,10 +26,16 @@ type layout struct {
 }
 
 func newLayout(tab int) *layout {
+	l := &layout{}
+	l.setTab(tab)
+	return l
+}
+
+func (l *layout) setTab(tab int) {
 	if tab <= 0 {
 		tab = 8
 	}
-	return &layout{tab: tab}
+	l.tab = tab
 }
 
 func (l *layout) push(r rune, w int8, b int) {

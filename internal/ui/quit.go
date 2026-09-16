@@ -26,7 +26,7 @@ func (a *App) requestQuit() {
 // askSaveRules runs next once the rules are dealt with, and not at all if the
 // answer is to stay.
 func (a *App) askSaveRules(next func()) {
-	if !a.rulesDirty() || !a.cfg.Bool("ask-save-rules") {
+	if !a.rulesDirty() || !a.opts().AskSaveRules {
 		next()
 		return
 	}
@@ -68,7 +68,7 @@ func (a *App) streamAtRisk() bool {
 // asking nicely. Paging the output of a command is not, and a pager that
 // stopped to ask on the way out of `git log` would be intolerable.
 func (a *App) askAboutStream() bool {
-	switch a.cfg.Str("ask-save") {
+	switch a.opts().AskSave {
 	case "on":
 		return true
 	case "off":

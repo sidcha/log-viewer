@@ -95,10 +95,10 @@ func settled(src *source.Source, budget int64) bool {
 // its line count: a long line wraps, and escape sequences take no columns at
 // all.
 func fitsOnScreen(cfg *config.Config, src *source.Source, rows, cols int) bool {
-	tab := cfg.Int("tab-width")
+	tab := cfg.Options().TabWidth
 	used := 0
 
-	sc := lines.NewScanner(src, 0, src.Size(), cfg.Int("block-size"))
+	sc := lines.NewScanner(src, 0, src.Size(), cfg.Options().BlockSize)
 	for sc.Scan() {
 		w := ui.DisplayWidth(sc.Bytes(), tab)
 		n := 1

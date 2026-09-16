@@ -102,10 +102,10 @@ func (a *App) placeCursor() {
 // trackCursor records where on screen the cursor column landed, while the line
 // holding it is being laid out and its columns are known.
 func (a *App) trackCursor(row, gw, maxCols int, text []byte) {
-	col := displayColumn(text, a.curCol, a.cfg.Int("tab-width"))
+	col := displayColumn(text, a.curCol, a.opts().TabWidth)
 
 	x, y := gw+col-a.hoff, row
-	if a.wrap && maxCols > 0 {
+	if a.opts().Wrap && maxCols > 0 {
 		x, y = gw+col%maxCols, row+col/maxCols
 	}
 	if x < gw || x >= a.cols || y < 0 || y >= a.rows {
@@ -125,7 +125,7 @@ func (a *App) trackCursor(row, gw, maxCols int, text []byte) {
 const statusLagBytes = 4 << 20
 
 func (a *App) showStatus() bool {
-	switch a.statusOn {
+	switch a.opts().StatusLine {
 	case "on":
 		return true
 	case "off":
@@ -140,14 +140,14 @@ func (a *App) showStatus() bool {
 }
 
 func (a *App) gutterWidth() int {
-	if !a.lineNums {
+	if !a.opts().LineNumbers {
 		return 0
 	}
 	digits := len(strconv.FormatInt(maxInt64(a.idx.Lines(), 1), 10))
 	if digits < 3 {
 		digits = 3
 	}
-	return digits + len([]rune(a.cfg.Str("gutter")))
+	return digits + len([]rune(a.opts().Gutter))
 }
 
 // drawLine renders one logical line and returns how many terminal rows it used.
@@ -158,7 +158,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 	}
 
 	budget := a.hoff + maxCols
-	if a.wrap {
+	if a.opts().Wrap {
 		budget = maxCols * avail
 	}
 	a.lay.build(ln.Text, budget)
@@ -183,7 +183,7 @@ func (a *App) drawLine(row, avail, gw int, idx int64, ln view.Line, base tcell.S
 		a.trackCursor(row, gw, maxCols, ln.Text)
 	}
 
-	if !a.wrap {
+	if !a.opts().Wrap {
 		a.paintRow(row, gw, a.hoff, maxCols, rowBase, true, ln)
 		return 1
 	}
@@ -249,7 +249,7 @@ func (a *App) paintSpans(spans []highlight.Span, n int) {
 // sequence that asks only for bold has said nothing about colour, and the
 // bytes it does not cover keep whatever lv decided for them.
 func (a *App) paintANSI(text []byte, n int) {
-	if !a.ansi {
+	if !a.opts().ANSI {
 		return
 	}
 	a.ansiSpans = ansi.Spans(text, a.ansiSpans[:0])
@@ -263,7 +263,7 @@ func (a *App) paintANSI(text []byte, n int) {
 
 // cursorTint reports the background for the row the cursor is on.
 func (a *App) cursorTint(idx int64) (tcell.Color, bool) {
-	if !a.cfg.Bool("cursor-line") || idx != a.cursorLine() || a.visualActive() {
+	if !a.opts().CursorLine || idx != a.cursorLine() || a.visualActive() {
 		return tcell.ColorDefault, false
 	}
 	_, bg, _ := a.cfg.Style("cursor.line").Decompose()
@@ -322,7 +322,7 @@ func (a *App) paint(m filter.Matcher, text []byte, st tcell.Style, n int) {
 func (a *App) paintRow(row, gw, startCol, maxCols int, base tcell.Style, first bool, ln view.Line) {
 	x := 0
 	if gw > 0 {
-		sep := a.cfg.Str("gutter")
+		sep := a.opts().Gutter
 		gstyle := a.cfg.Style("gutter")
 		if _, bg, _ := base.Decompose(); bg != tcell.ColorDefault {
 			gstyle = gstyle.Background(bg)
@@ -373,7 +373,7 @@ func (a *App) paintRow(row, gw, startCol, maxCols int, base tcell.Style, first b
 		switch {
 		case ln.Truncated:
 			a.scr.SetContent(a.cols-1, row, '…', nil, a.cfg.Style("truncated"))
-		case !a.wrap && c < a.lay.cols():
+		case !a.opts().Wrap && c < a.lay.cols():
 			a.scr.SetContent(a.cols-1, row, '›', nil, a.cfg.Style("gutter"))
 		}
 	}
@@ -480,7 +480,7 @@ func (a *App) stateText() string {
 	if n := a.rules.Count(filter.Highlight); n > 0 {
 		flags = append(flags, fmt.Sprintf("HL×%d", n))
 	}
-	if a.wrap {
+	if a.opts().Wrap {
 		flags = append(flags, "WRAP")
 	}
 	if len(flags) > 0 {

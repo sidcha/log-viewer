@@ -215,7 +215,7 @@ func run() int {
 // hours. Until then the shell is still waiting on the pipeline and the terminal
 // looks hung, which is not a reasonable thing to leave behind after q.
 func stopProducer(cfg *config.Config, src *source.Source) {
-	if !src.IsStdin() || !src.Streaming() || !cfg.Bool("stop-producer") {
+	if !src.IsStdin() || !src.Streaming() || !cfg.Options().StopProducer {
 		return
 	}
 
@@ -241,7 +241,7 @@ func stopProducer(cfg *config.Config, src *source.Source) {
 
 // detectColors works out what the terminal looks like.
 func detectColors(cfg *config.Config, opt *options) termcolor.Colors {
-	forced := cfg.Str("background")
+	forced := cfg.Options().Background
 	if opt.background != "" {
 		forced = opt.background
 	}
@@ -282,14 +282,15 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	idx := index.New(int64(cfg.Int("index-stride")), cfg.Int("max-checkpoints"))
+	o := cfg.Options()
+	idx := index.New(int64(o.IndexStride), o.MaxCheckpoints)
 
-	if cfg.Bool("quit-if-one-screen") {
+	if o.QuitIfOneScreen {
 		if done, err := dumpIfItFits(cfg, src); done || err != nil {
 			return err
 		}
 	}
-	if !cfg.Bool("alt-screen") {
+	if !o.AltScreen {
 		leaveOnScreen()
 	}
 
@@ -305,9 +306,6 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 	scr.SetStyle(cfg.Style("default"))
 	// A block, so normal mode reads the way it does in vi.
 	scr.SetCursorStyle(tcell.CursorStyleSteadyBlock)
-	if cfg.Bool("mouse") {
-		scr.EnableMouse(tcell.MouseButtonEvents)
-	}
 	scr.Clear()
 
 	app := ui.New(scr, cfg, src, idx, prof)
@@ -318,8 +316,8 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 
 	ixr := index.NewIndexer(src, idx, index.Options{
 		Wake:   w.Events(),
-		Block:  cfg.Int("block-size"),
-		Advise: cfg.Str("page-cache-advise"),
+		Block:  o.BlockSize,
+		Advise: o.PageCacheAdvise,
 		Notify: app.Wake,
 	})
 	ictx, icancel := context.WithCancel(ctx)
@@ -341,11 +339,11 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 // of its own, so it can only be polled.
 func newWatcher(cfg *config.Config, src *source.Source) *watch.Watcher {
 	if src.IsStdin() {
-		return watch.NewPolling(cfg.Dur("watch-fallback"))
+		return watch.NewPolling(cfg.Options().WatchFallback)
 	}
 	return watch.New(src.Name(), watch.Options{
-		Backstop: cfg.Dur("watch-backstop"),
-		Fallback: cfg.Dur("watch-fallback"),
+		Backstop: cfg.Options().WatchBackstop,
+		Fallback: cfg.Options().WatchFallback,
 	})
 }
 
@@ -440,7 +438,7 @@ func applyFlagOverrides(cfg *config.Config, opt *options) error {
 // no name was forced.
 func pickProfile(cfg *config.Config, src *source.Source, forced string) (*highlight.Profile, error) {
 	if forced == "" {
-		forced = cfg.Str("profile")
+		forced = cfg.Options().Profile
 	}
 	if forced == "none" {
 		return nil, nil

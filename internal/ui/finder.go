@@ -202,7 +202,7 @@ func (a *App) restartFinder() {
 	if pattern == "" {
 		return
 	}
-	m, err := filter.Compile(pattern, f.mode, a.cfg.Case())
+	m, err := filter.Compile(pattern, f.mode, a.opts().Case)
 	if err != nil {
 		f.err = err
 		return

@@ -102,7 +102,7 @@ func (a *App) replaceRuleMode(i int, pattern string, mode filter.Mode) {
 		return
 	}
 	old := rules[i]
-	m, err := filter.Compile(pattern, mode, a.cfg.Case())
+	m, err := filter.Compile(pattern, mode, a.opts().Case)
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return

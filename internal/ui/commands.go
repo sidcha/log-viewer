@@ -23,7 +23,7 @@ func (a *App) ApplyStartup(only, never, marks []string) error {
 	set := a.rules
 	add := func(action filter.Action, pats []string, flag string) error {
 		for _, p := range pats {
-			m, err := filter.Compile(p, filter.Literal, a.cfg.Case())
+			m, err := filter.Compile(p, filter.Literal, a.opts().Case)
 			if err != nil {
 				return fmt.Errorf("%s %q: %w", flag, p, err)
 			}
@@ -203,15 +203,15 @@ func (a *App) exec(cmd config.Command, count int64) {
 			a.infof("follow off")
 		}
 	case "wrap-toggle":
-		a.setBool("wrap", !a.wrap)
+		a.setBool("wrap", !a.opts().Wrap)
 	case "line-numbers-toggle":
-		a.setBool("line-numbers", !a.lineNums)
+		a.setBool("line-numbers", !a.opts().LineNumbers)
 	case "status-toggle":
-		if a.statusOn == "on" {
-			a.statusOn = "off"
-		} else {
-			a.statusOn = "on"
+		pin := "on"
+		if a.opts().StatusLine == "on" {
+			pin = "off"
 		}
+		_ = a.cfg.Set("status-line", pin)
 	case "set":
 		a.setOption(cmd.Args)
 	case "reload":
@@ -313,22 +313,10 @@ func (a *App) exec(cmd config.Command, count int64) {
 	}
 }
 
-// setBool changes a boolean setting and mirrors it into the live view state.
+// setBool changes a boolean setting.
 func (a *App) setBool(name string, value bool) {
 	_ = a.cfg.Set(name, onOff(value))
-	a.syncSettings()
 	a.infof("%s %s", name, onOff(value))
-}
-
-// syncSettings re-reads the settings the viewer caches.
-func (a *App) syncSettings() {
-	a.wrap = a.cfg.Bool("wrap")
-	a.lineNums = a.cfg.Bool("line-numbers")
-	a.ansi = a.cfg.Bool("ansi")
-	a.follow = a.cfg.Bool("follow") || a.follow
-	if a.wrap {
-		a.hoff = 0
-	}
 }
 
 // setOption implements :set, including vim's bare-name toggle for booleans.
@@ -362,8 +350,7 @@ func (a *App) setOption(args []string) {
 		a.errorf("%v", err)
 		return
 	}
-	a.syncSettings()
-	a.statusOn = a.cfg.Str("status-line")
+	a.opts()
 	a.infof("%s = %s", name, a.cfg.Str(name))
 }
 
@@ -400,7 +387,7 @@ func splitModePrefix(pattern string, def filter.Mode) (string, filter.Mode) {
 }
 
 func (a *App) pageStep() int64 {
-	n := int64(a.contentRows() - a.cfg.Int("page-overlap"))
+	n := int64(a.contentRows() - a.opts().PageOverlap)
 	if n < 1 {
 		n = 1
 	}
@@ -453,7 +440,7 @@ func (a *App) addRule(action filter.Action, pattern string, color filter.Color) 
 
 // addRuleMode appends a rule read in a given mode.
 func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode, color filter.Color) {
-	m, err := filter.Compile(pattern, mode, a.cfg.Case())
+	m, err := filter.Compile(pattern, mode, a.opts().Case)
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return
@@ -514,10 +501,10 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 
 	if next.Filtering() {
 		a.filt = view.NewFiltered(a.src, a.idx, next, view.FilteredOptions{
-			Block:     a.cfg.Int("block-size"),
-			MaxLine:   a.cfg.Int("max-line-bytes"),
-			Poll:      a.cfg.Dur("scan-poll"),
-			Advise:    a.cfg.Str("page-cache-advise"),
+			Block:     a.opts().BlockSize,
+			MaxLine:   a.opts().MaxLineBytes,
+			Poll:      a.opts().ScanPoll,
+			Advise:    a.opts().PageCacheAdvise,
 			Notify:    a.Wake,
 			Narrowing: narrowing,
 		})
@@ -593,7 +580,7 @@ func (a *App) gotoSourceLine(n int64) {
 // doSearchAt installs a search and goes straight to a line already chosen in
 // the finder, instead of scanning for the next match.
 func (a *App) doSearchAt(pattern string, mode filter.Mode, back bool, num int64) {
-	m, err := filter.Compile(pattern, mode, a.cfg.Case())
+	m, err := filter.Compile(pattern, mode, a.opts().Case)
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return
@@ -616,7 +603,7 @@ func (a *App) doSearch(pattern string, back bool) {
 }
 
 func (a *App) doSearchMode(pattern string, mode filter.Mode, back bool) {
-	m, err := filter.Compile(pattern, mode, a.cfg.Case())
+	m, err := filter.Compile(pattern, mode, a.opts().Case)
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
 		return

@@ -148,6 +148,8 @@ type Config struct {
 	// origins records which file last set each value, so a surprising
 	// effective value can be traced back to the layer responsible.
 	origins map[string]string
+	// version counts changes to values, for Options holders.
+	version uint64
 }
 
 // New returns a configuration holding only the built-in defaults for settings.
@@ -233,6 +235,7 @@ func (c *Config) SetFrom(name, value, origin string) error {
 	}
 	c.values[name] = value
 	c.origins[name] = origin
+	c.version++
 	return nil
 }
 

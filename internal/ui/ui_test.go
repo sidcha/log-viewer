@@ -23,6 +23,13 @@ const (
 
 func newTestApp(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 	t.Helper()
+	return newTestAppWith(t, content)
+}
+
+// newTestAppWith builds the viewer with settings applied first, as a
+// configuration file would, given as name, value pairs.
+func newTestAppWith(t *testing.T, content string, settings ...string) (*App, tcell.SimulationScreen) {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "test.log")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -33,12 +40,12 @@ func newTestApp(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { src.Close() })
-	return newAppOver(t, src, path, content)
+	return newAppOver(t, src, path, content, settings...)
 }
 
 // newAppOver builds the viewer over an already-open source, so a test can
 // supply a pipe instead of a file.
-func newAppOver(t *testing.T, src *source.Source, path, content string) (*App, tcell.SimulationScreen) {
+func newAppOver(t *testing.T, src *source.Source, path, content string, settings ...string) (*App, tcell.SimulationScreen) {
 	t.Helper()
 
 	cfg, err := config.Load(config.LoadOptions{NoUser: true})
@@ -48,6 +55,11 @@ func newAppOver(t *testing.T, src *source.Source, path, content string) (*App, t
 	// Keep the status line out of the way unless a test asks for it.
 	if err := cfg.Set("status-line", "off"); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i+1 < len(settings); i += 2 {
+		if err := cfg.Set(settings[i], settings[i+1]); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	idx := index.New(8, 0)
@@ -541,7 +553,6 @@ func TestAutoStatusDoesNotFlickerWhileTailing(t *testing.T) {
 	if err := a.cfg.Set("status-line", "auto"); err != nil {
 		t.Fatal(err)
 	}
-	a.statusOn = "auto"
 	a.clearMsg()
 
 	// Fully indexed and quiet: no chrome, every row is log content.

@@ -434,15 +434,15 @@ func TestCommandLineVimAliases(t *testing.T) {
 func TestCommandLineSet(t *testing.T) {
 	a, _ := newTestApp(t, numbered(20))
 
-	if a.wrap {
+	if a.opts().Wrap {
 		t.Fatal("wrap starts on")
 	}
 	a.runCommandLine("set wrap")
-	if !a.wrap {
+	if !a.opts().Wrap {
 		t.Error(":set wrap did not turn it on")
 	}
 	a.runCommandLine("set wrap")
-	if a.wrap {
+	if a.opts().Wrap {
 		t.Error(":set wrap did not toggle it back off")
 	}
 
