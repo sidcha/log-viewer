@@ -311,3 +311,34 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// TestABadRuleFailsTheLoad: it used to surface as a status message that faded
+// before anyone read it, leaving the rule silently missing.
+func TestABadRuleFailsTheLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte("\nrule only 'ERR(' match=regex\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(LoadOptions{Path: path, NoUser: true})
+	if err == nil {
+		t.Fatal("an unbalanced group loaded")
+	}
+	if !strings.Contains(err.Error(), path+":2") {
+		t.Errorf("error %q does not say where the rule is", err)
+	}
+}
+
+// TestRulesCompileUnderTheFinalCase: the case mode can be set after the rule.
+func TestRulesCompileUnderTheFinalCase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte("rule only error\nset case sensitive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(LoadOptions{Path: path, NoUser: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Presets()[0].M.Match([]byte("ERROR")) {
+		t.Error("the rule was compiled before case was set to sensitive")
+	}
+}

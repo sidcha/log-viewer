@@ -163,12 +163,7 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 
 	set := a.rules
 	for _, p := range cfg.Presets() {
-		m, err := filter.Compile(p.Pattern, p.Mode, opt.Case)
-		if err != nil {
-			a.errorf("rule %q: %v", p.Pattern, err)
-			continue
-		}
-		set = set.Add(filter.Rule{Action: p.Action, M: m, Enabled: true, Color: p.Color})
+		set = set.Add(filter.Rule{Action: p.Action, M: p.M, Enabled: true, Color: p.Color})
 	}
 	a.applyRules(set, false)
 	return a

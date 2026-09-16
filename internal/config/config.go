@@ -115,6 +115,11 @@ type Preset struct {
 	Pattern string
 	// Color is set when the file pins one; otherwise the viewer assigns it.
 	Color filter.Color
+	// M is the compiled pattern, under the configured case mode. Resolve
+	// fills it in, so a bad pattern fails the load like any other error.
+	M filter.Matcher
+	// where names the directive, for error messages.
+	where string
 }
 
 // IsBool reports whether the setting takes on/off, which is what lets :set
@@ -454,7 +459,7 @@ func (c *Config) directive(st stmt) error {
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		p := Preset{Action: action, Pattern: w[2]}
+		p := Preset{Action: action, Pattern: w[2], where: fmt.Sprintf("%s:%d", st.File, st.Line)}
 		for _, extra := range w[3:] {
 			k, v, ok := strings.Cut(extra, "=")
 			if !ok {
@@ -606,6 +611,17 @@ func (c *Config) Resolve() error {
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return fmt.Errorf("undefined styles:\n  %s", strings.Join(missing, "\n  "))
+	}
+
+	// Rules compile once every file is read, because the case mode they are
+	// compiled under can be set after them.
+	for i := range c.presets {
+		p := &c.presets[i]
+		m, err := filter.Compile(p.Pattern, p.Mode, c.Case())
+		if err != nil {
+			return fmt.Errorf("%s: rule %q: %w", p.where, p.Pattern, err)
+		}
+		p.M = m
 	}
 	return nil
 }
