@@ -190,8 +190,8 @@ func Write(l Level, name, value string) (string, error) {
 
 	entry := fmt.Sprintf("set %s %s", name, quoteWord(value))
 	replaced := false
-	for i, line := range lines {
-		if settingOnLine(line) == name {
+	for i, set := range topLevelSettings(lines) {
+		if set == name {
 			lines[i] = entry
 			replaced = true
 			break
@@ -217,10 +217,11 @@ func Unset(l Level, name string) (string, error) {
 		return "", err
 	}
 
+	sets := topLevelSettings(lines)
 	out := lines[:0]
 	found := false
-	for _, line := range lines {
-		if settingOnLine(line) == name {
+	for i, line := range lines {
+		if sets[i] == name {
 			found = true
 			continue
 		}
@@ -232,13 +233,28 @@ func Unset(l Level, name string) (string, error) {
 	return path, writeLines(path, out)
 }
 
-// settingOnLine returns the setting a `set` line assigns, or "".
-func settingOnLine(line string) string {
-	f := strings.Fields(strings.TrimSpace(line))
-	if len(f) >= 2 && f[0] == "set" {
-		return f[1]
+// topLevelSettings returns, for each line, the setting it assigns, or "".
+//
+// Only lines outside any block count. A `set` inside `background light { }`
+// applies to one kind of terminal; `lv config` addresses the unconditional
+// value, and rewriting the conditional one instead would change the wrong
+// thing.
+func topLevelSettings(lines []string) []string {
+	out := make([]string, len(lines))
+	depth := 0
+	for i, line := range lines {
+		f := strings.Fields(line)
+		switch {
+		case len(f) == 0 || strings.HasPrefix(f[0], "#"):
+		case f[0] == "}":
+			depth = max(0, depth-1)
+		case f[len(f)-1] == "{":
+			depth++
+		case depth == 0 && len(f) >= 2 && f[0] == "set":
+			out[i] = f[1]
+		}
 	}
-	return ""
+	return out
 }
 
 func readLines(path string) ([]string, error) {

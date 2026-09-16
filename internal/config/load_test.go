@@ -342,3 +342,32 @@ func TestRulesCompileUnderTheFinalCase(t *testing.T) {
 		t.Error("the rule was compiled before case was set to sensitive")
 	}
 }
+
+// TestWriteLeavesBackgroundBlocksAlone: a colour or setting that only applies
+// to a light terminal is not the unconditional value lv config addresses.
+func TestWriteLeavesBackgroundBlocksAlone(t *testing.T) {
+	path, _ := atLevels(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := "background light {\n    set cursor-line off\n}\n"
+	if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Write(Global, "cursor-line", "on"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if want := orig + "set cursor-line on\n"; string(b) != want {
+		t.Errorf("file = %q, want %q", b, want)
+	}
+
+	if _, err := Unset(Global, "cursor-line"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(path)
+	if string(b) != orig {
+		t.Errorf("after unset, file = %q, want the block untouched", b)
+	}
+}
