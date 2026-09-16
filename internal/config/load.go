@@ -124,33 +124,45 @@ type LoadOptions struct {
 	Background string
 }
 
+// builtinName is how the embedded configuration is named in messages and
+// origins.
+const builtinName = "<builtin>"
+
 // Load builds the effective configuration by cascading the layers.
 func Load(opt LoadOptions) (*Config, error) {
 	c := New()
 	c.background = opt.Background
-	if err := c.Parse("<builtin>", defaultConf); err != nil {
+	if err := c.Parse(builtinName, defaultConf); err != nil {
 		return nil, fmt.Errorf("built-in config: %w", err)
 	}
+	c.roots = append(c.roots, builtinName)
 
+	root := func(path string) error {
+		c.roots = append(c.roots, path)
+		return c.ParseFile(path)
+	}
 	if !opt.NoUser {
 		for _, l := range Layers() {
 			p, err := Path(l)
 			if err != nil {
 				continue // no home directory, no working directory: skip
 			}
-			if err := c.readIfPresent(p); err != nil {
+			if fi, err := os.Stat(p); err != nil || fi.IsDir() {
+				continue
+			}
+			if err := root(p); err != nil {
 				return nil, err
 			}
 		}
 		if p := os.Getenv("LV_CONFIG"); p != "" {
-			if err := c.ParseFile(p); err != nil {
+			if err := root(p); err != nil {
 				return nil, err
 			}
 		}
 	}
 
 	if opt.Path != "" {
-		if err := c.ParseFile(opt.Path); err != nil {
+		if err := root(opt.Path); err != nil {
 			return nil, err
 		}
 	}
@@ -159,13 +171,6 @@ func Load(opt LoadOptions) (*Config, error) {
 		return nil, err
 	}
 	return c, nil
-}
-
-func (c *Config) readIfPresent(path string) error {
-	if fi, err := os.Stat(path); err != nil || fi.IsDir() {
-		return nil
-	}
-	return c.ParseFile(path)
 }
 
 // Write stores a setting in a level's file, replacing any existing entry for

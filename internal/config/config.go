@@ -155,6 +155,13 @@ type Config struct {
 	origins map[string]string
 	// version counts changes to values, for Options holders.
 	version uint64
+
+	// parsed caches every file's statements by absolute path, and roots
+	// lists the files Load read at the top of the cascade, so the whole
+	// configuration can be replayed under another background without
+	// reading or tokenizing anything again.
+	parsed map[string][]stmt
+	roots  []string
 }
 
 // New returns a configuration holding only the built-in defaults for settings.
@@ -166,6 +173,7 @@ func New() *Config {
 		vroot:        &keyNode{},
 		styles:       make(map[string]tcell.Style),
 		sourced:      make(map[string]bool),
+		parsed:       make(map[string][]stmt),
 		origins:      make(map[string]string),
 		styleOrigins: make(map[string]string),
 	}
@@ -278,7 +286,7 @@ func (c *Config) Background() string { return c.background }
 // unless a configuration file already defined one. What the user wrote always
 // wins over what lv worked out.
 func (c *Config) SetDerivedStyle(name string, st tcell.Style) bool {
-	if origin, ok := c.styleOrigins[name]; ok && origin != "<builtin>" {
+	if origin, ok := c.styleOrigins[name]; ok && origin != builtinName {
 		return false
 	}
 	c.styles[name] = st
@@ -313,6 +321,11 @@ func (c *Config) Parse(file, src string) error {
 	if err != nil {
 		return err
 	}
+	c.parsed[file] = stmts
+	return c.run(file, stmts)
+}
+
+func (c *Config) run(file string, stmts []stmt) error {
 	c.loaded = append(c.loaded, file)
 	return c.exec(stmts)
 }
@@ -328,11 +341,48 @@ func (c *Config) ParseFile(path string) error {
 	}
 	c.sourced[abs] = true
 
+	if stmts, ok := c.parsed[abs]; ok {
+		return c.run(path, stmts)
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return c.Parse(path, string(b))
+	stmts, err := tokenize(path, string(b))
+	if err != nil {
+		return err
+	}
+	c.parsed[abs] = stmts
+	return c.run(path, stmts)
+}
+
+// WithBackground returns the configuration as it would have loaded had the
+// terminal background been known from the start: the same files, with the
+// `background` blocks for bg applied in their place in the cascade.
+//
+// Which background applies is itself a setting, and asking the terminal
+// needs the settings, so it cannot be known before the first load. The
+// replay reuses the statements already read rather than the disk.
+func (c *Config) WithBackground(bg string) (*Config, error) {
+	n := New()
+	n.background = bg
+	n.parsed = c.parsed
+	for _, root := range c.roots {
+		if stmts, ok := c.parsed[root]; ok && root == builtinName {
+			if err := n.run(root, stmts); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := n.ParseFile(root); err != nil {
+			return nil, err
+		}
+	}
+	n.roots = c.roots
+	if err := n.Resolve(); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
 func (c *Config) exec(stmts []stmt) error {

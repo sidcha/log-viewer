@@ -448,3 +448,41 @@ func TestBothThemesDefineTheSameStyles(t *testing.T) {
 		}
 	}
 }
+
+// TestWithBackgroundReplaysWithoutRereading: the background is only known
+// after a first load, and the replay must give what a load under it would
+// have, in cascade order, without going back to the files.
+func TestWithBackgroundReplaysWithoutRereading(t *testing.T) {
+	dir := t.TempDir()
+	inc := filepath.Join(dir, "inc")
+	main := filepath.Join(dir, "config")
+	if err := os.WriteFile(inc, []byte("style gutter fg=#010203\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := "source inc\nbackground light {\n    style cursor.line bg=#aaaaaa\n}\nstyle selection bg=#123456\n"
+	if err := os.WriteFile(main, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pre, err := Load(LoadOptions{Path: main, NoUser: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := Load(LoadOptions{Path: main, NoUser: true, Background: "light"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(inc)
+	os.Remove(main)
+
+	got, err := pre.WithBackground("light")
+	if err != nil {
+		t.Fatalf("replay went back to the files: %v", err)
+	}
+	if got.Dump() != want.Dump() {
+		t.Errorf("replay differs from a load under the same background:\n%s\n---\n%s", got.Dump(), want.Dump())
+	}
+	if got.Style("cursor.line") == pre.Style("cursor.line") {
+		t.Error("the light block did not apply")
+	}
+}

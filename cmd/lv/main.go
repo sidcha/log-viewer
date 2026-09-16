@@ -120,21 +120,21 @@ func run() int {
 
 	load := config.LoadOptions{Path: opt.configPath, NoUser: opt.noConfig}
 
-	// Two passes: the first only to learn which background the user asked for,
-	// since that decides which half of the theme applies and whether the
-	// terminal is worth asking.
+	// The settings decide which background to resolve and whether the
+	// terminal is worth asking, and the background decides which half of the
+	// theme applies: read the files once, then replay them under the answer.
 	pre, err := config.Load(load)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
 	term := detectColors(pre, &opt)
-	load.Background = "dark"
+	bg := "dark"
 	if !term.Dark {
-		load.Background = "light"
+		bg = "light"
 	}
 
-	cfg, err := config.Load(load)
+	cfg, err := pre.WithBackground(bg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
