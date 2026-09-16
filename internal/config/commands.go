@@ -70,6 +70,8 @@ var Specs = []Spec{
 	{"align-top", "motion", 0, 0, "redraw with the cursor at the top"},
 	{"align-bottom", "motion", 0, 0, "redraw with the cursor at the bottom"},
 	{"column-reset", "motion", 0, 0, "scroll back to column 0"},
+	{"scroll-right", "motion", 0, 1, "scroll the window right by h-scroll-step columns"},
+	{"scroll-left", "motion", 0, 1, "scroll the window left by h-scroll-step columns"},
 
 	{"visual", "select", 0, 0, "start or end a character-wise selection"},
 	{"visual-line", "select", 0, 0, "start or end a line-wise selection"},

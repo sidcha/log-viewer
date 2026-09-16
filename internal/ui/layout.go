@@ -160,6 +160,22 @@ func (l *layout) cols() int { return len(l.cells) }
 // own answer rather than an approximation of it.
 func DisplayWidth(text []byte, tab int) int { return displayColumn(text, len(text), tab) }
 
+// byteAtColumn is the offset of the character drawn at display column col,
+// or of the first one after it when col falls inside a tab or a wide rune.
+func byteAtColumn(text []byte, col, tab int) int {
+	for i := 0; i < len(text); {
+		if displayColumn(text, i, tab) >= col {
+			return i
+		}
+		_, size := utf8.DecodeRune(text[i:])
+		if j, ok := ansi.Skip(text, i); ok {
+			size = j - i
+		}
+		i += max(size, 1)
+	}
+	return len(text)
+}
+
 // displayColumn is the terminal column a byte offset falls on, applying the
 // same tab and width rules as build without laying the line out.
 func displayColumn(text []byte, byteOff, tab int) int {

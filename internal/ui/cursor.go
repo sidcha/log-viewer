@@ -218,6 +218,35 @@ func (a *App) alignView(where screenSpot) {
 	a.clampTop()
 }
 
+// scrollColumns moves the window sideways by steps of h-scroll-step, taking
+// the cursor along only when it would otherwise fall outside: zl and zh.
+func (a *App) scrollColumns(steps int) {
+	if a.opts().Wrap {
+		a.infof("nothing to scroll sideways while wrapping")
+		return
+	}
+	a.hoff += steps * a.opts().HScrollStep
+	a.hoff = max(0, min(a.hoff, maxHOff))
+
+	width := a.contentWidth()
+	if width < 1 {
+		return
+	}
+	text := a.cursorText()
+	tab := a.opts().TabWidth
+	col := displayColumn(text, a.curCol, tab)
+	switch {
+	case col < a.hoff:
+		a.curCol = byteAtColumn(text, a.hoff, tab)
+	case col >= a.hoff+width:
+		a.curCol = byteAtColumn(text, a.hoff+width-1, tab)
+	default:
+		return
+	}
+	a.clampColumn()
+	a.wantCol = a.curCol
+}
+
 // ------------------------------------------------------------ column motions
 
 // cursorText returns the text of the line the cursor is on.

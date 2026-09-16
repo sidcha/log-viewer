@@ -58,6 +58,7 @@ screen, so the next word is on the next *visible* line.
 | `C-d` `C-u` | half page down / up |
 | `C-f` `C-b` `Space` | page down / up |
 | `zz` `zt` `zb` | redraw with the cursor centred, at the top, at the bottom |
+| `zl` `zh` | scroll the window right / left by `h-scroll-step` columns |
 
 ### Selecting and copying
 

@@ -125,6 +125,10 @@ func (a *App) exec(cmd config.Command, count int64) {
 		a.columnEnd()
 	case "column-reset":
 		a.hoff = 0
+	case "scroll-right":
+		a.scrollColumns(int(n))
+	case "scroll-left":
+		a.scrollColumns(-int(n))
 	case "scroll-down":
 		a.scrollView(n)
 	case "scroll-up":
