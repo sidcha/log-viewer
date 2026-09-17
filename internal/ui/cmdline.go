@@ -8,44 +8,9 @@ import (
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
-// cmdAliases maps the short names vim users reach for onto lv's commands.
-//
-// The full names are the vocabulary; these exist so that :q, :w and :noh do
-// what a decade of muscle memory expects rather than reporting an error.
-var cmdAliases = map[string]string{
-	"q":          "quit",
-	"q!":         "quit-force",
-	"quit!":      "quit-force",
-	"qa":         "quit",
-	"qa!":        "quit-force",
-	"w":          "save-view",
-	"write":      "save-view",
-	"mks":        "rules-save",
-	"mksession":  "rules-save",
-	"rules":      "rules-save",
-	"source":     "rules-load",
-	"noh":        "search-clear",
-	"nohl":       "search-clear",
-	"nohlsearch": "search-clear",
-	"only":       "filter-only",
-	"never":      "filter-never",
-	"hl":         "highlight",
-	"filters":    "filter-list",
-	"ls":         "filter-list",
-	"e":          "reload",
-	"edit":       "reload",
-	"e!":         "reload",
-	"h":          "help",
-	"f":          "jump",
-	"follow":     "follow-toggle",
-	"n":          "search-next",
-	"N":          "search-prev",
-	"g":          "goto-line",
-}
-
 // runCommandLine executes one line typed at the `:` prompt.
 //
-// It accepts the lv command vocabulary, the vim aliases above, and a bare line
+// It accepts the lv command vocabulary and its vim aliases, and a bare line
 // number, which in vim jumps there.
 func (a *App) runCommandLine(text string) {
 	text = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), ":"))
@@ -72,10 +37,6 @@ func (a *App) runCommandLine(text string) {
 	if len(words) == 0 {
 		return
 	}
-	if full, ok := cmdAliases[words[0]]; ok {
-		words[0] = full
-	}
-
 	cmd, err := config.ParseCommand(words)
 	if err != nil {
 		a.errorf("%v", err)

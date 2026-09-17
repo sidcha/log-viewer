@@ -263,3 +263,26 @@ func TestCtrlLetterStillNormalises(t *testing.T) {
 		t.Errorf("C-d: event %+v does not match binding %+v", got, want)
 	}
 }
+
+// TestBindAcceptsAnAlias: :q works at the command line, so bind x q must too.
+func TestBindAcceptsAnAlias(t *testing.T) {
+	c := New()
+	if err := c.Parse("t", "bind x q\nbind y noh\n"); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[rune]string{'x': "quit", 'y': "search-clear"} {
+		cmd, m := c.Lookup([]Key{{Key: tcell.KeyRune, Ch: key}})
+		if m != Full || cmd.Name != want {
+			t.Errorf("%c = %v %v, want %s", key, cmd, m, want)
+		}
+	}
+}
+
+// TestEveryAliasNamesACommand keeps the alias table from pointing nowhere.
+func TestEveryAliasNamesACommand(t *testing.T) {
+	for alias, name := range Aliases {
+		if _, ok := LookupCommand(name); !ok {
+			t.Errorf("alias %q names %q, which is not a command", alias, name)
+		}
+	}
+}

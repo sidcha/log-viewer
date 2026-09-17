@@ -116,6 +116,42 @@ var Specs = []Spec{
 	{"nop", "other", 0, 0, "do nothing"},
 }
 
+// Aliases maps the short names vim users reach for onto lv's commands.
+//
+// The full names are the vocabulary; these exist so that :q, :w and :noh do
+// what a decade of muscle memory expects rather than reporting an error. They
+// are accepted wherever a command is, so a binding can use them too.
+var Aliases = map[string]string{
+	"q":          "quit",
+	"q!":         "quit-force",
+	"quit!":      "quit-force",
+	"qa":         "quit",
+	"qa!":        "quit-force",
+	"w":          "save-view",
+	"write":      "save-view",
+	"mks":        "rules-save",
+	"mksession":  "rules-save",
+	"rules":      "rules-save",
+	"source":     "rules-load",
+	"noh":        "search-clear",
+	"nohl":       "search-clear",
+	"nohlsearch": "search-clear",
+	"only":       "filter-only",
+	"never":      "filter-never",
+	"hl":         "highlight",
+	"filters":    "filter-list",
+	"ls":         "filter-list",
+	"e":          "reload",
+	"edit":       "reload",
+	"e!":         "reload",
+	"h":          "help",
+	"f":          "jump",
+	"follow":     "follow-toggle",
+	"n":          "search-next",
+	"N":          "search-prev",
+	"g":          "goto-line",
+}
+
 var specIndex = func() map[string]*Spec {
 	m := make(map[string]*Spec, len(Specs))
 	for i := range Specs {
@@ -130,12 +166,16 @@ func LookupCommand(name string) (*Spec, bool) {
 	return s, ok
 }
 
-// ParseCommand validates a command and its arguments.
+// ParseCommand validates a command and its arguments, resolving an alias to
+// the command it stands for.
 func ParseCommand(words []string) (Command, error) {
 	if len(words) == 0 {
 		return Command{}, fmt.Errorf("empty command")
 	}
 	name := words[0]
+	if full, ok := Aliases[name]; ok {
+		name = full
+	}
 	spec, ok := specIndex[name]
 	if !ok {
 		return Command{}, fmt.Errorf("unknown command %q", name)

@@ -159,7 +159,7 @@ func commandCompletions(prefix string) []string {
 	for _, s := range config.Specs {
 		add(s.Name)
 	}
-	for alias := range cmdAliases {
+	for alias := range config.Aliases {
 		add(alias)
 	}
 	sort.Strings(out)
