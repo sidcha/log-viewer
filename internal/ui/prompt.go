@@ -27,14 +27,9 @@ const (
 
 // prompt is the single-line editor that replaces the status row.
 type prompt struct {
+	lineEdit
 	kind  promptKind
 	label string
-	buf   []rune
-	cur   int
-
-	hist  *[]string
-	hidx  int    // index into history; len(hist) means "the live buffer"
-	stash []rune // the live buffer while browsing history
 
 	// then runs after the prompt is accepted, used to quit once rules have
 	// been written.
@@ -48,10 +43,7 @@ type prompt struct {
 
 func (a *App) openPrompt(kind promptKind, label string, hist *[]string) {
 	a.clearMsg()
-	a.prompt = &prompt{kind: kind, label: label, hist: hist}
-	if hist != nil {
-		a.prompt.hidx = len(*hist)
-	}
+	a.prompt = &prompt{lineEdit: newLineEdit(hist), kind: kind, label: label}
 }
 
 func (a *App) closePrompt() {
@@ -84,33 +76,28 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 		return
 
 	case tcell.KeyLeft:
-		if p.cur > 0 {
-			p.cur--
-		}
+		p.left()
 	case tcell.KeyRight:
-		if p.cur < len(p.buf) {
-			p.cur++
-		}
+		p.right()
 	case tcell.KeyHome, tcell.KeyCtrlA:
-		p.cur = 0
+		p.home()
 	case tcell.KeyEnd, tcell.KeyCtrlE:
-		p.cur = len(p.buf)
+		p.toEnd()
 
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if p.cur > 0 {
-			p.buf = append(p.buf[:p.cur-1], p.buf[p.cur:]...)
-			p.cur--
+		if p.backspace() {
 			p.comps = nil
 		}
 	case tcell.KeyDelete, tcell.KeyCtrlD:
-		if p.cur < len(p.buf) {
-			p.buf = append(p.buf[:p.cur], p.buf[p.cur+1:]...)
+		if p.del() {
 			p.comps = nil
 		}
 	case tcell.KeyCtrlU:
-		p.buf, p.cur, p.comps = p.buf[:0], 0, nil
+		p.clear()
+		p.comps = nil
 	case tcell.KeyCtrlK:
-		p.buf, p.comps = p.buf[:p.cur], nil
+		p.killEnd()
+		p.comps = nil
 	case tcell.KeyCtrlW:
 		p.deleteWord()
 		p.comps = nil
@@ -121,10 +108,7 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 		p.history(1)
 
 	case tcell.KeyRune:
-		p.buf = append(p.buf, 0)
-		copy(p.buf[p.cur+1:], p.buf[p.cur:])
-		p.buf[p.cur] = ev.Rune()
-		p.cur++
+		p.insert(ev.Rune())
 		p.comps = nil
 	}
 }
@@ -180,42 +164,6 @@ func commandCompletions(prefix string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func (p *prompt) deleteWord() {
-	i := p.cur
-	for i > 0 && p.buf[i-1] == ' ' {
-		i--
-	}
-	for i > 0 && p.buf[i-1] != ' ' {
-		i--
-	}
-	p.buf = append(p.buf[:i], p.buf[p.cur:]...)
-	p.cur = i
-}
-
-func (p *prompt) history(delta int) {
-	if p.hist == nil || len(*p.hist) == 0 {
-		return
-	}
-	h := *p.hist
-	if p.hidx == len(h) && delta < 0 {
-		p.stash = append(p.stash[:0], p.buf...)
-	}
-	n := p.hidx + delta
-	if n < 0 {
-		n = 0
-	}
-	if n > len(h) {
-		n = len(h)
-	}
-	p.hidx = n
-	if n == len(h) {
-		p.buf = append(p.buf[:0], p.stash...)
-	} else {
-		p.buf = append(p.buf[:0], []rune(h[n])...)
-	}
-	p.cur = len(p.buf)
 }
 
 // appendHistory keeps the most recent limit entries, most recent last,

@@ -77,12 +77,8 @@ type finderRow struct {
 }
 
 type finder struct {
-	kind  finderKind
-	buf   []rune
-	cur   int
-	hist  *[]string
-	hidx  int
-	stash []rune
+	lineEdit
+	kind finderKind
 
 	m   filter.Matcher
 	err error
@@ -143,19 +139,15 @@ func (a *App) openFinder(kind finderKind, pattern string) {
 	a.clearMsg()
 
 	f := &finder{
-		kind:    kind,
-		hist:    &a.histPattern,
-		hidx:    len(a.histPattern),
-		color:   filter.NextColor(a.rules.Colors()),
-		height:  1,
-		editing: -1,
-		mode:    defaultMode(kind),
+		lineEdit: newLineEdit(&a.histPattern),
+		kind:     kind,
+		color:    filter.NextColor(a.rules.Colors()),
+		height:   1,
+		editing:  -1,
+		mode:     defaultMode(kind),
 	}
 	f.style = a.styleFor(f.color)
-	if pattern != "" {
-		f.buf = []rune(pattern)
-		f.cur = len(f.buf)
-	}
+	f.set(pattern)
 	a.find = f
 	a.restartFinder()
 }
@@ -418,11 +410,9 @@ func (a *App) finderKey(ev *tcell.EventKey) {
 	// The arrows move through the matches, so recalling an earlier pattern
 	// keeps the control keys it has at the bottom-row prompt.
 	case tcell.KeyCtrlP:
-		f.history(-1)
-		edited = true
+		edited = f.history(-1)
 	case tcell.KeyCtrlN:
-		f.history(1)
-		edited = true
+		edited = f.history(1)
 
 	case tcell.KeyPgUp:
 		a.moveSel(-f.height)
@@ -432,38 +422,24 @@ func (a *App) finderKey(ev *tcell.EventKey) {
 		return
 
 	case tcell.KeyLeft:
-		if f.cur > 0 {
-			f.cur--
-		}
+		f.left()
 	case tcell.KeyRight:
-		if f.cur < len(f.buf) {
-			f.cur++
-		}
+		f.right()
 	case tcell.KeyHome, tcell.KeyCtrlA:
-		f.cur = 0
+		f.home()
 	case tcell.KeyEnd, tcell.KeyCtrlE:
-		f.cur = len(f.buf)
+		f.toEnd()
 
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if f.cur > 0 {
-			f.buf = append(f.buf[:f.cur-1], f.buf[f.cur:]...)
-			f.cur--
-			edited = true
-		}
+		edited = f.backspace()
 	case tcell.KeyDelete, tcell.KeyCtrlD:
-		if f.cur < len(f.buf) {
-			f.buf = append(f.buf[:f.cur], f.buf[f.cur+1:]...)
-			edited = true
-		}
+		edited = f.del()
 	case tcell.KeyCtrlU:
-		f.buf, f.cur = f.buf[:0], 0
-		edited = true
+		edited = f.clear()
 	case tcell.KeyCtrlK:
-		f.buf = f.buf[:f.cur]
-		edited = true
+		edited = f.killEnd()
 	case tcell.KeyCtrlW:
-		f.deleteWord()
-		edited = true
+		edited = f.deleteWord()
 
 	case tcell.KeyCtrlR:
 		// Switch between reading the pattern plainly and as PCRE. A dedicated
@@ -477,54 +453,12 @@ func (a *App) finderKey(ev *tcell.EventKey) {
 		edited = true
 
 	case tcell.KeyRune:
-		f.buf = append(f.buf, 0)
-		copy(f.buf[f.cur+1:], f.buf[f.cur:])
-		f.buf[f.cur] = ev.Rune()
-		f.cur++
-		edited = true
+		edited = f.insert(ev.Rune())
 	}
 
 	if edited {
 		a.restartFinder()
 	}
-}
-
-func (f *finder) deleteWord() {
-	i := f.cur
-	for i > 0 && f.buf[i-1] == ' ' {
-		i--
-	}
-	for i > 0 && f.buf[i-1] != ' ' {
-		i--
-	}
-	f.buf = append(f.buf[:i], f.buf[f.cur:]...)
-	f.cur = i
-}
-
-// history walks the patterns typed earlier, keeping the live buffer aside so
-// coming back down returns what was half written.
-func (f *finder) history(delta int) {
-	if f.hist == nil || len(*f.hist) == 0 {
-		return
-	}
-	h := *f.hist
-	if f.hidx == len(h) && delta < 0 {
-		f.stash = append(f.stash[:0], f.buf...)
-	}
-	n := f.hidx + delta
-	if n < 0 {
-		n = 0
-	}
-	if n > len(h) {
-		n = len(h)
-	}
-	f.hidx = n
-	if n == len(h) {
-		f.buf = append(f.buf[:0], f.stash...)
-	} else {
-		f.buf = append(f.buf[:0], []rune(h[n])...)
-	}
-	f.cur = len(f.buf)
 }
 
 // commitFinder applies what the window was opened for.

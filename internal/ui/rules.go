@@ -83,7 +83,6 @@ func (a *App) promptSaveRules(after func()) {
 	a.openPrompt(pSaveRules, "save rules to: ", &a.histPath)
 	a.prompt.then = after
 	if a.rulesPath != "" {
-		a.prompt.buf = []rune(a.rulesPath)
-		a.prompt.cur = len(a.prompt.buf)
+		a.prompt.set(a.rulesPath)
 	}
 }

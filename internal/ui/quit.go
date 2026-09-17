@@ -100,8 +100,7 @@ func (a *App) askSaveStream(next func()) {
 func (a *App) promptSaveStream(after func()) {
 	a.openPrompt(pSaveStream, "save all input to: ", &a.histPath)
 	a.prompt.then = after
-	a.prompt.buf = []rune(captureName(time.Now()))
-	a.prompt.cur = len(a.prompt.buf)
+	a.prompt.set(captureName(time.Now()))
 }
 
 // captureName is a suggestion to type over, so answering the question does not
