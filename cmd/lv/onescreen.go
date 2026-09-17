@@ -19,15 +19,6 @@ import (
 // under -F, and why git asks for LESS=FRX; without it lv is unusable as a
 // pager for the dozens of commands whose output is usually tiny.
 
-// settleWait bounds how long lv will wait to find out whether the input is
-// short, before giving up and opening the viewer.
-//
-// Something finite has usually finished by now, and anything still arriving is
-// a stream, which is exactly the case that must not be waited on: a viewer
-// that sat silently waiting for `dmesg -w` to produce a screenful would look
-// like a hang.
-const settleWait = 250 * time.Millisecond
-
 // dumpIfItFits writes the whole input to stdout and reports that there is
 // nothing left to do.
 //
@@ -49,7 +40,7 @@ func dumpIfItFits(cfg *config.Config, src *source.Source) (bool, error) {
 	// One cell cannot hold less than one byte, so anything larger than the
 	// screen has too many to fit and there is no point waiting for the rest.
 	budget := int64(rows) * int64(cols)
-	if !settled(src, budget) {
+	if !settled(src, budget, cfg.Options().OneScreenWait) {
 		return false, nil
 	}
 
@@ -77,8 +68,13 @@ func dumpIfItFits(cfg *config.Config, src *source.Source) (bool, error) {
 }
 
 // settled waits for the input to finish, or to grow past any hope of fitting.
-func settled(src *source.Source, budget int64) bool {
-	deadline := time.Now().Add(settleWait)
+//
+// The wait is bounded. Something finite has usually finished by then, and
+// anything still arriving is a stream, which is exactly the case that must
+// not be waited on: a viewer that sat silently waiting for `dmesg -w` to
+// produce a screenful would look like a hang.
+func settled(src *source.Source, budget int64, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
 	for src.Streaming() {
 		if src.Size() > budget {
 			return false

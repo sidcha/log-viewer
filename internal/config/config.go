@@ -90,6 +90,15 @@ var Settings = []Setting{
 	{"clipboard-command", kStr, "", nil, Live, "external clipboard program; empty uses the terminal escape"},
 	{"stop-producer", kBool, "on", nil, Live, "on exit, stop the process piping into lv"},
 	{"background", kEnum, "auto", []string{"auto", "dark", "light"}, Startup, "terminal background; auto asks the terminal"},
+	{"query-timeout", kDur, "150ms", nil, Startup, "how long to wait for the terminal to report its colours"},
+	{"cursor-line-tint", kInt, "14", nil, Startup, "percent of the way from background to foreground the derived cursor line sits"},
+	{"one-screen-wait", kDur, "250ms", nil, Startup, "how long quit-if-one-screen waits for piped input to finish"},
+	{"regex-timeout", kDur, "250ms", nil, Startup, "how long one backtracking regex match may run before the line counts as a miss"},
+	{"filter-checkpoint-bytes", kInt, "262144", nil, Startup, "bytes between filtered-view checkpoints, however rare the matches"},
+	{"max-highlights", kInt, "64", nil, Live, "matches of one pattern marked on a line"},
+	{"history-size", kInt, "100", nil, Live, "patterns, paths and commands remembered for recall"},
+	{"osc52-max-bytes", kInt, "65536", nil, Live, "largest yank sent through the terminal clipboard escape"},
+	{"idle-release", kDur, "3s", nil, Live, "quiet time before freed memory is returned to the OS"},
 }
 
 var settingIndex = func() map[string]*Setting {
@@ -663,8 +672,10 @@ func (c *Config) Resolve() error {
 		return fmt.Errorf("undefined styles:\n  %s", strings.Join(missing, "\n  "))
 	}
 
-	// Rules compile once every file is read, because the case mode they are
-	// compiled under can be set after them.
+	// Rules compile once every file is read, because the case mode and the
+	// regex timeout they are compiled under can be set after them. The
+	// timeout is process-wide, so every later pattern compiles under it too.
+	filter.SetMatchTimeout(c.Dur("regex-timeout"))
 	for i := range c.presets {
 		p := &c.presets[i]
 		m, err := filter.Compile(p.Pattern, p.Mode, c.Case())

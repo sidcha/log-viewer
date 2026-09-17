@@ -308,7 +308,7 @@ func (a *App) markSelection(idx int64, length int) {
 
 // paint applies a style to every place m matches within text.
 func (a *App) paint(m filter.Matcher, text []byte, st tcell.Style, n int) {
-	a.locs = m.Find(text, a.locs[:0], 64)
+	a.locs = m.Find(text, a.locs[:0], a.opts().MaxHighlights)
 	for _, l := range a.locs {
 		cs, ce := a.lay.cellRange(l[0], l[1])
 		for k := cs; k < ce && k < n; k++ {

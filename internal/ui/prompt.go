@@ -66,7 +66,7 @@ func (a *App) promptKey(ev *tcell.EventKey) {
 	case tcell.KeyEnter:
 		text := string(p.buf)
 		if p.hist != nil && strings.TrimSpace(text) != "" {
-			*p.hist = appendHistory(*p.hist, text)
+			*p.hist = appendHistory(*p.hist, text, a.opts().HistorySize)
 		}
 		kind, then := p.kind, p.then
 		a.closePrompt()
@@ -218,14 +218,13 @@ func (p *prompt) history(delta int) {
 	p.cur = len(p.buf)
 }
 
-// appendHistory keeps the most recent entries, most recent last, without
-// duplicating the previous one.
-func appendHistory(h []string, s string) []string {
+// appendHistory keeps the most recent limit entries, most recent last,
+// without duplicating the previous one.
+func appendHistory(h []string, s string, limit int) []string {
 	if len(h) > 0 && h[len(h)-1] == s {
 		return h
 	}
 	h = append(h, s)
-	const limit = 100
 	if len(h) > limit {
 		h = h[len(h)-limit:]
 	}

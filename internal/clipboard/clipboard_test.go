@@ -38,7 +38,7 @@ func TestCopyViaCommand(t *testing.T) {
 	}
 
 	const text = "some selected text"
-	if err := Copy(text, script); err != nil {
+	if err := Copy(text, script, 64<<10); err != nil {
 		t.Fatalf("Copy: %v", err)
 	}
 	b, err := os.ReadFile(out)
@@ -57,7 +57,7 @@ func TestCopyReportsCommandFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Copy("x", script)
+	err := Copy("x", script, 64<<10)
 	if err == nil {
 		t.Fatal("a failing clipboard command should be reported")
 	}
@@ -66,10 +66,10 @@ func TestCopyReportsCommandFailure(t *testing.T) {
 		t.Errorf("error = %v, want it to carry the command's output", err)
 	}
 
-	if err := Copy("x", "definitely-not-a-program"); err == nil {
+	if err := Copy("x", "definitely-not-a-program", 64<<10); err == nil {
 		t.Error("a missing clipboard command should be reported")
 	}
-	if err := Copy("x", "   "); err == nil {
+	if err := Copy("x", "   ", 64<<10); err == nil {
 		t.Error("an all-whitespace clipboard command should be reported")
 	}
 }
@@ -77,8 +77,8 @@ func TestCopyReportsCommandFailure(t *testing.T) {
 // TestLargeCopyRefusesTheEscape guards against a silent no-op: terminals drop
 // oversized OSC 52 payloads without saying anything.
 func TestLargeCopyRefusesTheEscape(t *testing.T) {
-	big := strings.Repeat("x", maxOSC52+1)
-	err := Copy(big, "")
+	big := strings.Repeat("x", 64<<10+1)
+	err := Copy(big, "", 64<<10)
 	if err == nil {
 		t.Fatal("an oversized copy through the terminal escape should be refused")
 	}
@@ -93,7 +93,7 @@ func TestLargeCopyRefusesTheEscape(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\ncat > "+out+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Copy(big, script); err != nil {
+	if err := Copy(big, script, 64<<10); err != nil {
 		t.Fatalf("Copy via command: %v", err)
 	}
 	fi, err := os.Stat(out)

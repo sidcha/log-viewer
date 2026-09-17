@@ -48,6 +48,15 @@ type Options struct {
 	ClipboardCommand string        `setting:"clipboard-command"`
 	StopProducer     bool          `setting:"stop-producer"`
 	Background       string        `setting:"background"`
+	QueryTimeout     time.Duration `setting:"query-timeout"`
+	CursorLineTint   int           `setting:"cursor-line-tint"`
+	OneScreenWait    time.Duration `setting:"one-screen-wait"`
+	RegexTimeout     time.Duration `setting:"regex-timeout"`
+	FilterCkBytes    int           `setting:"filter-checkpoint-bytes"`
+	MaxHighlights    int           `setting:"max-highlights"`
+	HistorySize      int           `setting:"history-size"`
+	OSC52MaxBytes    int           `setting:"osc52-max-bytes"`
+	IdleRelease      time.Duration `setting:"idle-release"`
 }
 
 // Version changes whenever a setting does, so a holder of Options can tell

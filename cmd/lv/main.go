@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/sidcha/log-viewer/internal/config"
@@ -32,14 +31,6 @@ var version = "dev"
 // sniffBytes is how much of the head of the file is read to detect a syntax
 // profile.
 const sniffBytes = 1 << 16
-
-// queryTimeout bounds the wait for a terminal that never answers the colour
-// query. It is paid once, at startup.
-const queryTimeout = 150 * time.Millisecond
-
-// How far the derived tint sits from the terminal background, towards its
-// foreground: enough to see, not enough to distract.
-const cursorLineMix = 0.14
 
 type stringList []string
 
@@ -254,7 +245,8 @@ func detectColors(cfg *config.Config, opt *options) termcolor.Colors {
 			defer f.Close()
 		}
 	}
-	return termcolor.Detect(term, forced, queryTimeout)
+	// A terminal that never answers costs this wait, once, at startup.
+	return termcolor.Detect(term, forced, cfg.Options().QueryTimeout)
 }
 
 // deriveStyles replaces the tints that only make sense relative to the
@@ -271,7 +263,7 @@ func deriveStyles(cfg *config.Config, term termcolor.Colors) {
 	bg, fg := term.Background, term.Foreground
 
 	cfg.SetDerivedStyle("cursor.line", tcell.StyleDefault.
-		Background(toTcell(termcolor.Blend(bg, fg, cursorLineMix))))
+		Background(toTcell(termcolor.Blend(bg, fg, float64(cfg.Options().CursorLineTint)/100))))
 }
 
 func toTcell(c termcolor.RGB) tcell.Color {

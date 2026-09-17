@@ -19,11 +19,6 @@ import (
 	"github.com/sidcha/log-viewer/internal/view"
 )
 
-// idleAfter is how long the UI must be quiet before memory is handed back to
-// the OS. Go's allocator holds freed spans as heap headroom, which is exactly
-// the behaviour a viewer for very large files should not have.
-const idleAfter = 3 * time.Second
-
 // busyOp is a cancellable background operation with progress.
 type busyOp struct {
 	what   string
@@ -146,7 +141,7 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 		idx:   idx,
 		base:  view.NewBase(src, idx, opt.BlockSize, opt.MaxLineBytes),
 		rules: filter.NewSet(),
-		eng:   highlight.NewEngine(opt.MaxScanBytes, 64),
+		eng:   highlight.NewEngine(opt.MaxScanBytes, opt.MaxHighlights),
 		lay:   newLayout(opt.TabWidth),
 		// Following is where the session starts, not a setting it tracks:
 		// scrolling away turns it off, and a later :set must not undo that.
@@ -187,8 +182,8 @@ func (a *App) reconfigure() {
 	o := &a.opt
 
 	a.lay.setTab(o.TabWidth)
-	if a.eng.MaxScan != o.MaxScanBytes && o.MaxScanBytes > 0 {
-		a.eng.MaxScan = o.MaxScanBytes
+	if (a.eng.MaxScan != o.MaxScanBytes || a.eng.MaxMatches != o.MaxHighlights) && o.MaxScanBytes > 0 && o.MaxHighlights > 0 {
+		a.eng.MaxScan, a.eng.MaxMatches = o.MaxScanBytes, o.MaxHighlights
 		a.eng.Forget()
 	}
 	if o.Mouse != a.mouseOn {
@@ -323,7 +318,10 @@ func (a *App) tickDirty() bool {
 		a.msg = ""
 		dirty = true
 	}
-	if !dirty && !a.freed && time.Since(a.lastAct) > idleAfter {
+	// Go's allocator holds freed spans as heap headroom, which is exactly the
+	// behaviour a viewer for very large files should not have; once the UI
+	// has been quiet a while, hand them back.
+	if !dirty && !a.freed && time.Since(a.lastAct) > a.opts().IdleRelease {
 		a.freed = true
 		debug.FreeOSMemory()
 	}

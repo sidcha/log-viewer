@@ -10,13 +10,6 @@ import (
 	"github.com/sidcha/log-viewer/internal/tty"
 )
 
-// maxOSC52 bounds how much is sent through the terminal escape.
-//
-// Terminals impose their own limits on OSC 52 payloads and mostly fail
-// silently past them, which would look like a yank that did nothing. Past this
-// size an external command is the only dependable route.
-const maxOSC52 = 64 << 10
-
 // Copy puts text on the clipboard.
 //
 // The default route is the OSC 52 escape sequence, which asks the terminal
@@ -26,7 +19,11 @@ const maxOSC52 = 64 << 10
 //
 // command, when set, replaces that with an external program such as wl-copy or
 // pbcopy, for terminals that do not implement OSC 52 or have it turned off.
-func Copy(text, command string) error {
+//
+// Terminals impose their own limits on OSC 52 payloads and mostly fail
+// silently past them, which would look like a yank that did nothing, so text
+// longer than maxOSC52 bytes is refused with a pointer to the command instead.
+func Copy(text, command string, maxOSC52 int) error {
 	if command != "" {
 		return runCommand(text, command)
 	}

@@ -505,12 +505,13 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 
 	if next.Filtering() {
 		a.filt = view.NewFiltered(a.src, a.idx, next, view.FilteredOptions{
-			Block:     a.opts().BlockSize,
-			MaxLine:   a.opts().MaxLineBytes,
-			Poll:      a.opts().ScanPoll,
-			Advise:    a.opts().PageCacheAdvise,
-			Notify:    a.Wake,
-			Narrowing: narrowing,
+			Block:           a.opts().BlockSize,
+			MaxLine:         a.opts().MaxLineBytes,
+			Poll:            a.opts().ScanPoll,
+			Advise:          a.opts().PageCacheAdvise,
+			CheckpointBytes: int64(a.opts().FilterCkBytes),
+			Notify:          a.Wake,
+			Narrowing:       narrowing,
 		})
 		a.filtPtr.Store(a.filt)
 	}

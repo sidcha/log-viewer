@@ -535,7 +535,7 @@ func (a *App) commitFinder() {
 		return
 	}
 	if f.hist != nil {
-		*f.hist = appendHistory(*f.hist, pattern)
+		*f.hist = appendHistory(*f.hist, pattern, a.opts().HistorySize)
 	}
 
 	kind, color, mode, editing, back := f.kind, f.color, f.mode, f.editing, f.back
@@ -686,7 +686,7 @@ func (a *App) putFinderText(x, y, width int, row finderRow, base tcell.Style) {
 		if base != (tcell.Style{}) && f.kind == findNever {
 			hit = hit.StrikeThrough(true)
 		}
-		a.locs = f.m.Find(row.text[:minInt(len(row.text), a.lay.used)], a.locs[:0], 64)
+		a.locs = f.m.Find(row.text[:minInt(len(row.text), a.lay.used)], a.locs[:0], a.opts().MaxHighlights)
 		for _, l := range a.locs {
 			cs, ce := a.lay.cellRange(l[0], l[1])
 			for k := cs; k < ce && k < n; k++ {

@@ -136,7 +136,7 @@ func (a *App) yank(count int64) {
 	}
 
 	text := b.String()
-	if err := clipboard.Copy(text, a.opts().ClipboardCommand); err != nil {
+	if err := clipboard.Copy(text, a.opts().ClipboardCommand, a.opts().OSC52MaxBytes); err != nil {
 		a.errorf("clipboard: %v", err)
 		return
 	}

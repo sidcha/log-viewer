@@ -64,7 +64,16 @@ func ParseMode(s string) (Mode, error) {
 // exponential time on the wrong line. A log viewer reads lines it has never
 // seen from files it did not write, so the engine needs a leash; RE2, which
 // lv used before, could not express the syntax being asked for here.
-const matchTimeout = 250 * time.Millisecond
+var matchTimeout = 250 * time.Millisecond
+
+// SetMatchTimeout replaces the bound on a single backtracking match. It
+// applies to patterns compiled afterwards, and is meant to be set once, from
+// the configuration, before any are.
+func SetMatchTimeout(d time.Duration) {
+	if d > 0 {
+		matchTimeout = d
+	}
+}
 
 // ------------------------------------------------------------------- fuzzy
 
