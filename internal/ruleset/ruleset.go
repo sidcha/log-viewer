@@ -13,10 +13,11 @@ package ruleset
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/sidcha/log-viewer/internal/atomicfile"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -139,8 +140,7 @@ func Load(path string) (*File, error) {
 
 // Save writes a rules file, creating any missing directories.
 //
-// It writes to a sibling temporary file and renames, so an interrupted save
-// cannot leave a half-written set in place of a good one.
+// An interrupted save cannot leave a half-written set in place of a good one.
 func (f *File) Save(path string) error {
 	f.Version = Version
 
@@ -150,36 +150,10 @@ func (f *File) Save(path string) error {
 	}
 	b = append(b, '\n')
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	return atomicfile.Write(path, 0o644, func(w io.Writer) error {
+		_, err := w.Write(b)
 		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer func() {
-		if name != "" {
-			tmp.Close()
-			os.Remove(name)
-		}
-	}()
-
-	if _, err := tmp.Write(b); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
-		return err
-	}
-	name = "" // adopted
-	return nil
+	})
 }
 
 // Digest is a stable summary used to tell whether anything has changed since

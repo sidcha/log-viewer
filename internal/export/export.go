@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sidcha/log-viewer/internal/atomicfile"
 	"github.com/sidcha/log-viewer/internal/source"
 	"github.com/sidcha/log-viewer/internal/view"
 )
@@ -28,8 +29,7 @@ const reportEvery = 4096
 
 // Save streams v to path.
 //
-// It writes to a sibling temporary file and renames on success, so an
-// interrupted or failed save never leaves a half-written file in place.
+// An interrupted or failed save never leaves a half-written file in place.
 func Save(ctx context.Context, src *source.Source, v view.View, path string, report func(Progress)) (Progress, error) {
 	var p Progress
 
@@ -41,69 +41,50 @@ func Save(ctx context.Context, src *source.Source, v view.View, path string, rep
 		return p, errors.New("refusing to overwrite the file being viewed")
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(abs), "."+filepath.Base(abs)+".lv-*")
+	p.Total = src.Size()
+	err = atomicfile.Write(abs, 0o644, func(f io.Writer) error {
+		w := bufio.NewWriterSize(f, 1<<20)
+		var (
+			counter int
+			werr    error
+			cancel  bool
+		)
+		ierr := v.Iterate(0, func(i int64, ln Line) bool {
+			n, err := writeLine(src, w, ln)
+			if err != nil {
+				werr = err
+				return false
+			}
+			p.Lines++
+			p.Bytes += n
+			p.Scanned = ln.Next
+
+			counter++
+			if counter >= reportEvery {
+				counter = 0
+				if report != nil {
+					report(p)
+				}
+				if ctx.Err() != nil {
+					cancel = true
+					return false
+				}
+			}
+			return true
+		})
+		switch {
+		case werr != nil:
+			return werr
+		case ierr != nil:
+			return ierr
+		case cancel:
+			return ctx.Err()
+		}
+		return w.Flush()
+	})
 	if err != nil {
 		return p, err
 	}
-	tmpName := tmp.Name()
-	defer func() {
-		if tmpName != "" {
-			tmp.Close()
-			os.Remove(tmpName)
-		}
-	}()
-
-	w := bufio.NewWriterSize(tmp, 1<<20)
-	p.Total = src.Size()
-
-	var (
-		counter int
-		werr    error
-		cancel  bool
-	)
-	ierr := v.Iterate(0, func(i int64, ln Line) bool {
-		n, err := writeLine(src, w, ln)
-		if err != nil {
-			werr = err
-			return false
-		}
-		p.Lines++
-		p.Bytes += n
-		p.Scanned = ln.Next
-
-		counter++
-		if counter >= reportEvery {
-			counter = 0
-			if report != nil {
-				report(p)
-			}
-			if ctx.Err() != nil {
-				cancel = true
-				return false
-			}
-		}
-		return true
-	})
-
-	switch {
-	case werr != nil:
-		return p, werr
-	case ierr != nil:
-		return p, ierr
-	case cancel:
-		return p, ctx.Err()
-	}
-
-	if err := w.Flush(); err != nil {
-		return p, err
-	}
-	if err := tmp.Close(); err != nil {
-		return p, err
-	}
-	if err := os.Rename(tmpName, abs); err != nil {
-		return p, err
-	}
-	tmpName = "" // adopted; do not remove
 
 	p.Done = true
 	if report != nil {

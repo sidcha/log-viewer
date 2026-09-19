@@ -3,10 +3,13 @@ package config
 import (
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/sidcha/log-viewer/internal/atomicfile"
 )
 
 //go:embed default.conf
@@ -278,31 +281,12 @@ func readLines(path string) ([]string, error) {
 }
 
 func writeLines(path string, lines []string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	body := ""
-	if len(lines) > 0 {
-		body = strings.Join(lines, "\n") + "\n"
-	}
-	// Write and rename so an interrupted save cannot truncate the file.
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	if _, err := tmp.WriteString(body); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		return err
-	}
-	if err := os.Chmod(name, 0o644); err != nil {
-		os.Remove(name)
-		return err
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, 0o644, func(w io.Writer) error {
+		for _, line := range lines {
+			if _, err := io.WriteString(w, line+"\n"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
