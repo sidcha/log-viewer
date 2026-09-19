@@ -166,12 +166,6 @@ func (a *App) reload() {
 
 // ------------------------------------------------------------------- rules
 
-// addRule appends a literal-match rule. col may be zero, in which case one
-// is assigned.
-func (a *App) addRule(action filter.Action, pattern string, col color.RGB) {
-	a.addRuleMode(action, pattern, filter.Literal, col)
-}
-
 // addRuleMode appends a rule read in a given mode.
 func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode, col color.RGB) {
 	m, err := filter.Compile(pattern, mode, a.opts().Case)
@@ -329,12 +323,6 @@ func (a *App) doSearchAt(pattern string, mode filter.Mode, back bool, num int64)
 	// before the scan reached one. Run the search itself rather than leaving
 	// a highlight and no movement.
 	a.startSearch(a.top, back)
-}
-
-// doSearch runs a search the way / does, for callers that have no mode of
-// their own to offer.
-func (a *App) doSearch(pattern string, back bool) {
-	a.doSearchMode(pattern, defaultMode(findSearch), back)
 }
 
 func (a *App) doSearchMode(pattern string, mode filter.Mode, back bool) {

@@ -551,9 +551,6 @@ func (a *App) Close() {
 	}
 }
 
-// Source exposes the source for callers that need it.
-func (a *App) Source() *source.Source { return a.src }
-
 // styleFor turns a rule's colour into a drawable style, choosing text that
 // reads against it.
 func (a *App) styleFor(c color.RGB) tcell.Style {

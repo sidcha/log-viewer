@@ -11,23 +11,6 @@ import (
 	"strings"
 )
 
-// Kind is what a rule does to the lines it matches.
-type Kind int
-
-const (
-	// Keep restricts the view to matching lines.
-	Keep Kind = iota
-	// Drop removes matching lines from the view.
-	Drop
-)
-
-func (k Kind) String() string {
-	if k == Keep {
-		return "keep"
-	}
-	return "drop"
-}
-
 // Case selects case sensitivity.
 type Case int
 

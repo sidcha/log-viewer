@@ -59,13 +59,11 @@ func writeOSC52(text string) error {
 	}
 	defer term.Close()
 
-	enc := base64.StdEncoding.EncodeToString([]byte(text))
-	_, err = fmt.Fprintf(term, "\x1b]52;c;%s\a", enc)
+	_, err = term.WriteString(Sequence(text))
 	return err
 }
 
-// Sequence returns the raw escape for a given text, so it can be tested
-// without a terminal attached.
+// Sequence returns the escape that puts text on the clipboard.
 func Sequence(text string) string {
 	return "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(text)) + "\a"
 }
