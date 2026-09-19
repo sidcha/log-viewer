@@ -23,15 +23,17 @@ func (a *App) draw() {
 	a.cols = w
 	a.curX, a.curY = -1, -1
 
-	// The finder takes the bottom of the screen and brings its own status, so
-	// the log simply gets fewer rows while it is open.
-	findH := 0
-	if a.find != nil {
-		findH = a.finderHeight(h)
+	// A mode that takes the bottom of the screen -- the match window, the
+	// prompt, a question -- brings its own status, so the log simply gets
+	// fewer rows while it is up.
+	m := a.mode()
+	taken := 0
+	if m != nil {
+		taken = m.screenRows(a, h)
 	}
-	status := findH == 0 && a.showStatus()
+	status := taken == 0 && a.showStatus()
 
-	rows := h - findH
+	rows := h - taken
 	if status {
 		rows--
 	}
@@ -70,13 +72,11 @@ func (a *App) draw() {
 	if status {
 		a.drawStatus(h-1, w)
 	}
-	if findH > 0 {
-		a.drawFinder(h-findH, w, findH)
+	if m != nil {
+		m.draw(a, h-taken, w, h)
+	} else {
+		a.placeCursor()
 	}
-	if a.ov != nil {
-		a.ov.draw(a, w, h)
-	}
-	a.placeCursor()
 	a.scr.Show()
 }
 
@@ -87,16 +87,11 @@ func (a *App) draw() {
 // and * can only ever read whatever column the cursor was left on. A tinted
 // line says which row; it cannot say which character.
 func (a *App) placeCursor() {
-	switch {
-	case a.find != nil:
-		return // the finder put it on its own input line
-	case a.prompt != nil || a.confirm != nil:
-		return // the prompt put it on the status row
-	case a.ov != nil || a.curX < 0:
+	if a.curX < 0 {
 		a.scr.HideCursor()
-	default:
-		a.scr.ShowCursor(a.curX, a.curY)
+		return
 	}
+	a.scr.ShowCursor(a.curX, a.curY)
 }
 
 // trackCursor records where on screen the cursor column landed, while the line
@@ -129,9 +124,9 @@ func (a *App) showStatus() bool {
 	case "on":
 		return true
 	case "off":
-		return a.prompt != nil || a.confirm != nil
+		return false
 	default:
-		if a.prompt != nil || a.confirm != nil || a.liveMsg() || a.busy != nil || a.pendingKeys() != "" {
+		if a.liveMsg() || a.busy != nil || a.pendingKeys() != "" {
 			return true
 		}
 		scanned, total := a.activeView().Progress()
@@ -407,15 +402,6 @@ func (a *App) fillRow(row int, s string, st tcell.Style) {
 // ---------------------------------------------------------------- status line
 
 func (a *App) drawStatus(row, w int) {
-	if a.confirm != nil {
-		a.drawConfirm(row, w)
-		return
-	}
-	if a.prompt != nil {
-		a.drawPrompt(row, w)
-		return
-	}
-
 	style := a.cfg.Style("status")
 	if a.busy != nil {
 		style = a.cfg.Style("status.busy")

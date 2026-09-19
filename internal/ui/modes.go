@@ -5,24 +5,73 @@ package ui
 // of its own (config.Tables), so every key in every mode is bound by name and
 // can be rebound, and a mode's commands are handlers like any other.
 
+// mode is something that has taken the keyboard from the log for a while: a
+// question, the match window, the prompt or a panel. Everything the rest of
+// the viewer needs to know about one is here, so adding a mode is writing
+// these methods rather than threading a new case through the key handling,
+// the layout, the drawing and the cursor.
+type mode interface {
+	// keyTable names the bindings in force while the mode is up.
+	keyTable() string
+	// screenRows is how many rows the mode takes from the bottom of a screen h
+	// rows tall; the log gets the rest. A panel floats over the log and
+	// takes none.
+	screenRows(a *App, h int) int
+	// draw paints the mode, starting at row top of a screen w by h, and puts
+	// the terminal cursor where it belongs.
+	draw(a *App, top, w, h int)
+}
+
+// mode is what has the keyboard, or nil when the log itself does. Should two
+// be up at once, the one that most needs an answer wins.
+func (a *App) mode() mode {
+	switch {
+	case a.confirm != nil:
+		return a.confirm
+	case a.find != nil:
+		return a.find
+	case a.prompt != nil:
+		return a.prompt
+	case a.ov != nil:
+		return a.ov
+	}
+	return nil
+}
+
 // keyTable names the key table for what currently has the keyboard.
 func (a *App) keyTable() string {
 	switch {
-	case a.confirm != nil:
-		return "confirm"
-	case a.find != nil:
-		return "finder"
-	case a.prompt != nil:
-		return "prompt"
-	case a.ov != nil && a.ov.kind == ovRules:
-		return "rules"
-	case a.ov != nil:
-		return "overlay"
+	case a.mode() != nil:
+		return a.mode().keyTable()
 	case a.visualActive():
 		return "visual"
 	default:
 		return "normal"
 	}
+}
+
+func (c *confirm) keyTable() string             { return "confirm" }
+func (c *confirm) screenRows(a *App, h int) int { return 1 }
+func (c *confirm) draw(a *App, top, w, h int)   { a.drawConfirm(top, w) }
+
+func (f *finder) keyTable() string             { return "finder" }
+func (f *finder) screenRows(a *App, h int) int { return a.finderHeight(h) }
+func (f *finder) draw(a *App, top, w, h int)   { a.drawFinder(top, w, h-top) }
+
+func (p *prompt) keyTable() string             { return "prompt" }
+func (p *prompt) screenRows(a *App, h int) int { return 1 }
+func (p *prompt) draw(a *App, top, w, h int)   { a.drawPrompt(top, w) }
+
+func (o *overlay) keyTable() string {
+	if o.kind == ovRules {
+		return "rules"
+	}
+	return "overlay"
+}
+func (o *overlay) screenRows(a *App, h int) int { return 0 }
+func (o *overlay) draw(a *App, top, w, h int) {
+	o.drawPanel(a, w, h)
+	a.scr.HideCursor()
 }
 
 // editing is the line editor that has the keyboard, if one does, and what

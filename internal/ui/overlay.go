@@ -104,8 +104,8 @@ func (o *overlay) selectedRow() int {
 	return items[o.sel]
 }
 
-// draw paints the overlay as a bordered panel over the log.
-func (o *overlay) draw(a *App, w, h int) {
+// drawPanel paints the overlay as a bordered panel over the log.
+func (o *overlay) drawPanel(a *App, w, h int) {
 	if w < 8 || h < 5 {
 		return
 	}
