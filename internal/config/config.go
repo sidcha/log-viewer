@@ -203,8 +203,19 @@ func (c *Config) Files() []string { return c.loaded }
 
 // Bool reads a boolean setting.
 func (c *Config) Bool(name string) bool {
-	v := strings.ToLower(c.values[name])
-	return v == "on" || v == "true" || v == "yes" || v == "1"
+	b, _ := parseBool(c.values[name])
+	return b
+}
+
+// parseBool reads the words a boolean setting accepts.
+func parseBool(s string) (value, ok bool) {
+	switch strings.ToLower(s) {
+	case "on", "true", "yes", "1":
+		return true, true
+	case "off", "false", "no", "0":
+		return false, true
+	}
+	return false, false
 }
 
 // Int reads an integer setting, falling back to its default.
@@ -523,7 +534,7 @@ func (c *Config) directive(st stmt) error {
 		if len(w) != 2 {
 			return st.errf("usage: source <path>")
 		}
-		path := expandHome(w[1])
+		path := ExpandHome(w[1])
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(filepath.Dir(st.File), path)
 		}
@@ -675,8 +686,7 @@ func (c *Config) Resolve() error {
 func validate(s *Setting, value string) error {
 	switch s.Kind {
 	case kBool:
-		switch strings.ToLower(value) {
-		case "on", "off", "true", "false", "yes", "no", "1", "0":
+		if _, ok := parseBool(value); ok {
 			return nil
 		}
 		return fmt.Errorf("%s: expected on/off, got %q", s.Name, value)
@@ -715,7 +725,9 @@ func parseRuleColor(v string) (color.RGB, error) {
 	return color.FromTcell(c), nil
 }
 
-func expandHome(p string) string {
+// ExpandHome resolves a leading ~ the way a shell would, for paths read from
+// a file or typed at a prompt.
+func ExpandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(home, strings.TrimPrefix(p, "~"))

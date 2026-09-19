@@ -182,11 +182,11 @@ func (a *App) cursorToScreen(where screenSpot, count int64) {
 	var line int64
 	switch where {
 	case spotTop:
-		line = a.top + max64(off, count-1)
+		line = a.top + max(off, count-1)
 	case spotMiddle:
 		line = (a.top + last) / 2
 	default:
-		line = last - max64(off, count-1)
+		line = last - max(off, count-1)
 	}
 	a.follow = false
 	a.setCursor(line)
@@ -394,11 +394,4 @@ func (a *App) wordUnderCursor() string {
 		end += size
 	}
 	return string(text[start:end])
-}
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }

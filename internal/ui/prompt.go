@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -156,18 +154,18 @@ func (a *App) acceptPrompt(kind promptKind, text string, then func()) {
 
 	switch kind {
 	case pSave:
-		a.startSaveView(a.activeView(), expandPath(trimmed), then)
+		a.startSaveView(a.activeView(), config.ExpandHome(trimmed), then)
 
 	case pSaveStream:
-		a.startSaveView(a.base, expandPath(trimmed), then)
+		a.startSaveView(a.base, config.ExpandHome(trimmed), then)
 
 	case pSaveRules:
-		if a.saveRules(expandPath(trimmed)) && then != nil {
+		if a.saveRules(config.ExpandHome(trimmed)) && then != nil {
 			then()
 		}
 
 	case pLoadRules:
-		a.loadRulesAt(expandPath(trimmed))
+		a.loadRulesAt(config.ExpandHome(trimmed))
 
 	case pGotoLine:
 		n, err := strconv.ParseInt(trimmed, 10, 64)
@@ -180,15 +178,4 @@ func (a *App) acceptPrompt(kind promptKind, text string, then func()) {
 	case pCommand:
 		a.runCommandLine(trimmed)
 	}
-}
-
-// expandPath resolves a leading ~ so a path typed at the prompt behaves the
-// way it would in a shell.
-func expandPath(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
-	}
-	return p
 }

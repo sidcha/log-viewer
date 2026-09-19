@@ -58,7 +58,7 @@ func init() {
 		},
 		"rules-save": func(a *App, c call) {
 			if len(c.Args) == 1 {
-				a.saveRules(expandPath(c.Args[0]))
+				a.saveRules(config.ExpandHome(c.Args[0]))
 				return
 			}
 			if a.rulesPath != "" {
@@ -69,7 +69,7 @@ func init() {
 		},
 		"rules-load": func(a *App, c call) {
 			if len(c.Args) == 1 {
-				a.loadRulesAt(expandPath(c.Args[0]))
+				a.loadRulesAt(config.ExpandHome(c.Args[0]))
 				return
 			}
 			a.openPrompt(pLoadRules, "load rules from: ", &a.histPath)

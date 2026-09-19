@@ -46,9 +46,9 @@ func ParseCase(s string) (Case, bool) {
 	switch strings.ToLower(s) {
 	case "smart":
 		return Smart, true
-	case "sensitive", "on", "true", "yes":
+	case "sensitive":
 		return Sensitive, true
-	case "insensitive", "off", "false", "no":
+	case "insensitive":
 		return Insensitive, true
 	}
 	return Smart, false

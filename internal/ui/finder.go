@@ -58,17 +58,27 @@ func (k finderKind) String() string {
 // committed, would be worse than no window at all.
 func (k finderKind) wraps() bool { return k == findJump || k == findSearch }
 
+// ruleKinds pairs each window that makes a rule with the rule it makes.
+var ruleKinds = map[finderKind]filter.Action{
+	findOnly:      filter.Only,
+	findNever:     filter.Never,
+	findHighlight: filter.Highlight,
+}
+
 // rule returns the rule action this window commits, for the three that make one.
 func (k finderKind) rule() (filter.Action, bool) {
-	switch k {
-	case findOnly:
-		return filter.Only, true
-	case findNever:
-		return filter.Never, true
-	case findHighlight:
-		return filter.Highlight, true
+	a, ok := ruleKinds[k]
+	return a, ok
+}
+
+// finderFor is the window that makes a rule of the given action.
+func finderFor(action filter.Action) finderKind {
+	for k, a := range ruleKinds {
+		if a == action {
+			return k
+		}
 	}
-	return filter.Only, false
+	return findHighlight
 }
 
 // finderRow is one match.
@@ -493,14 +503,14 @@ func (a *App) drawFinder(top, w, h int) {
 	}
 	inputRow := top + 1
 	text := "> " + string(f.buf)
-	a.putStr(1, inputRow, text+strings.Repeat(" ", maxInt(0, w-2-len([]rune(text)))), promptStyle)
+	a.putStr(1, inputRow, text+strings.Repeat(" ", max(0, w-2-len([]rune(text)))), promptStyle)
 	if f.err != nil {
 		if msg := " ✗ " + f.err.Error(); len([]rune(text))+len([]rune(msg)) < w-2 {
 			a.putStr(1+len([]rune(text)), inputRow, msg, promptStyle)
 		}
 	}
 
-	f.height = maxInt(1, bottom-inputRow-1)
+	f.height = max(1, bottom-inputRow-1)
 	a.drawFinderRows(inputRow+1, w, f.height, st, dim)
 
 	a.scr.ShowCursor(1+2+f.cur, inputRow)
@@ -546,21 +556,15 @@ func (a *App) putFinderText(x, y, width int, row finderRow, base tcell.Style) {
 	f := a.find
 	a.lay.build(row.text, width)
 
+	a.flatStyles(base)
 	n := a.lay.cols()
-	if cap(a.styles) < n {
-		a.styles = make([]tcell.Style, n, n*2+16)
-	}
-	a.styles = a.styles[:n]
-	for i := range a.styles {
-		a.styles[i] = base
-	}
 
 	if f.m != nil {
 		hit := f.style
 		if base != (tcell.Style{}) && f.kind == findNever {
 			hit = hit.StrikeThrough(true)
 		}
-		a.locs = f.m.Find(row.text[:minInt(len(row.text), a.lay.used)], a.locs[:0], a.opts().MaxHighlights)
+		a.locs = f.m.Find(row.text[:min(len(row.text), a.lay.used)], a.locs[:0], a.opts().MaxHighlights)
 		for _, l := range a.locs {
 			cs, ce := a.lay.cellRange(l[0], l[1])
 			for k := cs; k < ce && k < n; k++ {
@@ -640,20 +644,6 @@ func (a *App) rulesSummary() string {
 	return strings.Join(parts, "  ") + "  (= to edit)"
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // editRule reopens an existing rule in the finder, so changing a pattern shows
 // what the new one catches exactly as writing it did.
 func (a *App) editRule(i int) {
@@ -663,15 +653,7 @@ func (a *App) editRule(i int) {
 	}
 	r := rules[i]
 
-	kind := findHighlight
-	switch r.Action {
-	case filter.Only:
-		kind = findOnly
-	case filter.Never:
-		kind = findNever
-	}
-
-	a.openFinder(kind, r.M.Pattern())
+	a.openFinder(finderFor(r.Action), r.M.Pattern())
 	a.find.editing = i
 	a.find.color = r.Color
 	a.find.style = a.styleFor(r.Color)

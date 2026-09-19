@@ -138,7 +138,7 @@ func (a *App) gutterWidth() int {
 	if !a.opts().LineNumbers {
 		return 0
 	}
-	digits := len(strconv.FormatInt(maxInt64(a.idx.Lines(), 1), 10))
+	digits := len(strconv.FormatInt(max(a.idx.Lines(), 1), 10))
 	if digits < 3 {
 		digits = 3
 	}
@@ -499,13 +499,6 @@ func clampPct(v int64) int64 {
 		return 100
 	}
 	return v
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // commas formats a number with thousands separators, which matters when the
