@@ -154,6 +154,10 @@ func modeHandlers() map[string]handler {
 		"panel-page-down": onPanel(func(a *App, o *overlay, c call) { o.scroll(o.page()) }),
 		"panel-top":       onPanel(func(a *App, o *overlay, c call) { o.scroll(-len(o.rows)) }),
 		"panel-bottom":    onPanel(func(a *App, o *overlay, c call) { o.scroll(len(o.rows)) }),
+		"panel-scroll-up": onPanel(func(a *App, o *overlay, c call) { o.scroll(-int(c.n)) }),
+		"panel-scroll-down": onPanel(func(a *App, o *overlay, c call) {
+			o.scroll(int(c.n))
+		}),
 
 		// ----------------------------------------------------------- rules
 		"rules-toggle": onRule(func(a *App, i int) { a.updateRuleList(a.rules.Toggle(i)) }),

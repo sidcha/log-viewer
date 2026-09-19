@@ -36,14 +36,23 @@ func FromEvent(ev *tcell.EventKey) Key {
 	return Key{Key: k, Mod: mod}
 }
 
+// The mouse wheel has no key code of its own in tcell. lv gives it two, past
+// every code tcell uses, so a wheel turn can be bound like any other key.
+const (
+	KeyWheelUp tcell.Key = 0x7f00 + iota
+	KeyWheelDown
+)
+
 var namedKeys = map[string]tcell.Key{
-	"enter":  tcell.KeyEnter,
-	"cr":     tcell.KeyEnter,
-	"return": tcell.KeyEnter,
-	"tab":    tcell.KeyTab,
-	"btab":   tcell.KeyBacktab,
-	"escape": tcell.KeyEscape,
-	"esc":    tcell.KeyEscape,
+	"wheelup":   KeyWheelUp,
+	"wheeldown": KeyWheelDown,
+	"enter":     tcell.KeyEnter,
+	"cr":        tcell.KeyEnter,
+	"return":    tcell.KeyEnter,
+	"tab":       tcell.KeyTab,
+	"btab":      tcell.KeyBacktab,
+	"escape":    tcell.KeyEscape,
+	"esc":       tcell.KeyEscape,
 	// tcell reports both backspace codes, DEL and ^H, as KeyBackspace, so
 	// that is the key a binding has to name to ever match.
 	"bspace":    tcell.KeyBackspace,
@@ -77,6 +86,7 @@ var keyNames = func() map[tcell.Key]string {
 			m[k] = titled(n)
 		}
 	}
+	m[KeyWheelUp], m[KeyWheelDown] = "WheelUp", "WheelDown"
 	return m
 }()
 

@@ -409,27 +409,17 @@ func (a *App) pendingKeys() string {
 	return out + config.SequenceString(a.pending)
 }
 
+// mouse turns a wheel turn into a key, so what it does is a binding in
+// whichever table has the keyboard.
 func (a *App) mouse(ev *tcell.EventMouse) {
 	if !a.opts().Mouse {
 		return
 	}
-	step := int64(a.opts().ScrollStep * 3)
-	if step < 1 {
-		step = 3
-	}
 	switch {
 	case ev.Buttons()&tcell.WheelUp != 0:
-		if a.ov != nil {
-			a.ov.scroll(-int(step))
-			return
-		}
-		a.scrollView(-step)
+		a.dispatch(a.keyTable(), config.Key{Key: config.KeyWheelUp})
 	case ev.Buttons()&tcell.WheelDown != 0:
-		if a.ov != nil {
-			a.ov.scroll(int(step))
-			return
-		}
-		a.scrollView(step)
+		a.dispatch(a.keyTable(), config.Key{Key: config.KeyWheelDown})
 	}
 }
 

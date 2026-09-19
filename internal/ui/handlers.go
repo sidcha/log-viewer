@@ -135,10 +135,10 @@ func init() {
 			a.scrollColumns(-int(c.n))
 		},
 		"scroll-down": func(a *App, c call) {
-			a.scrollView(c.n)
+			a.scrollView(c.n * int64(max(a.opts().ScrollStep, 1)))
 		},
 		"scroll-up": func(a *App, c call) {
-			a.scrollView(-c.n)
+			a.scrollView(-c.n * int64(max(a.opts().ScrollStep, 1)))
 		},
 		"page-up": func(a *App, c call) {
 			a.pageCursor(-a.pageStep())
