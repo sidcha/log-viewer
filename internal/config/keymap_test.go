@@ -286,3 +286,15 @@ func TestEveryAliasNamesACommand(t *testing.T) {
 		}
 	}
 }
+
+// TestBackspaceMatchesWhatTheTerminalSends: terminals send DEL or ^H for the
+// backspace key, and tcell reports both as one key; a binding naming the
+// other code would never fire.
+func TestBackspaceMatchesWhatTheTerminalSends(t *testing.T) {
+	want := seq(t, "<BSpace>")[0]
+	for _, k := range []tcell.Key{tcell.KeyBackspace2, tcell.KeyBackspace} {
+		if got := FromEvent(tcell.NewEventKey(k, 0, tcell.ModNone)); got != want {
+			t.Errorf("key %d arrives as %v, <BSpace> is %v", k, got, want)
+		}
+	}
+}

@@ -37,16 +37,18 @@ func FromEvent(ev *tcell.EventKey) Key {
 }
 
 var namedKeys = map[string]tcell.Key{
-	"enter":     tcell.KeyEnter,
-	"cr":        tcell.KeyEnter,
-	"return":    tcell.KeyEnter,
-	"tab":       tcell.KeyTab,
-	"btab":      tcell.KeyBacktab,
-	"escape":    tcell.KeyEscape,
-	"esc":       tcell.KeyEscape,
-	"bspace":    tcell.KeyBackspace2,
-	"bs":        tcell.KeyBackspace2,
-	"backspace": tcell.KeyBackspace2,
+	"enter":  tcell.KeyEnter,
+	"cr":     tcell.KeyEnter,
+	"return": tcell.KeyEnter,
+	"tab":    tcell.KeyTab,
+	"btab":   tcell.KeyBacktab,
+	"escape": tcell.KeyEscape,
+	"esc":    tcell.KeyEscape,
+	// tcell reports both backspace codes, DEL and ^H, as KeyBackspace, so
+	// that is the key a binding has to name to ever match.
+	"bspace":    tcell.KeyBackspace,
+	"bs":        tcell.KeyBackspace,
+	"backspace": tcell.KeyBackspace,
 	"del":       tcell.KeyDelete,
 	"up":        tcell.KeyUp,
 	"down":      tcell.KeyDown,
