@@ -2,6 +2,8 @@ package filter
 
 import (
 	"testing"
+
+	"github.com/sidcha/log-viewer/internal/color"
 )
 
 func rule(t *testing.T, a Action, pat string) Rule {
@@ -187,7 +189,7 @@ func TestEveryRuleGetsAColor(t *testing.T) {
 		s = s.Add(rule(t, Highlight, string(rune('a'+i))))
 	}
 	for i, r := range s.All() {
-		if r.Color == (Color{}) {
+		if r.Color == (color.RGB{}) {
 			t.Errorf("rule %d was not assigned a colour", i)
 		}
 	}
@@ -204,7 +206,7 @@ func TestAssignedColorsStayDistinct(t *testing.T) {
 
 	hues := make([]float64, 0, n)
 	for _, r := range s.All() {
-		hues = append(hues, hueOf(r.Color))
+		hues = append(hues, r.Color.Hue())
 	}
 	for i := range hues {
 		gap := minHueGap(hues[i], append(append([]float64{}, hues[:i]...), hues[i+1:]...))
@@ -215,18 +217,18 @@ func TestAssignedColorsStayDistinct(t *testing.T) {
 }
 
 func TestExplicitColorIsKept(t *testing.T) {
-	want := Color{R: 1, G: 2, B: 3}
+	want := color.RGB{R: 1, G: 2, B: 3}
 	s := NewSet().Add(Rule{Action: Highlight, M: rule(t, Highlight, "x").M, Enabled: true, Color: want})
 	if got := s.All()[0].Color; got != want {
-		t.Errorf("Color = %v, want %v", got, want)
+		t.Errorf("color.RGB = %v, want %v", got, want)
 	}
 }
 
 func TestColorRoundTripsThroughHue(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		h := float64(i) / 20
-		c := hslToRGB(h, colorSat, colorLight)
-		if got := hueOf(c); minHueGap(got, []float64{h}) > 0.01 {
+		c := color.FromHSL(h, colorSat, colorLight)
+		if got := c.Hue(); minHueGap(got, []float64{h}) > 0.01 {
 			t.Errorf("hue %v round-tripped to %v", h, got)
 		}
 		// Generated colours are light, so dark text reads on them.

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -261,11 +262,11 @@ rule highlight 'OOM' color=#ff0000
 	if presets[2].Action != filter.Highlight {
 		t.Errorf("preset 2 action = %v", presets[2].Action)
 	}
-	if got := presets[2].Color; got != (filter.Color{R: 0xff}) {
+	if got := presets[2].Color; got != (color.RGB{R: 0xff}) {
 		t.Errorf("preset 2 colour = %+v, want pure red", got)
 	}
 	// Presets without a colour are left blank so the viewer assigns one.
-	if presets[0].Color != (filter.Color{}) {
+	if presets[0].Color != (color.RGB{}) {
 		t.Errorf("preset 0 should have no pinned colour, got %+v", presets[0].Color)
 	}
 }

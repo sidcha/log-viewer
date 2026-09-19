@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/view"
 )
@@ -31,13 +32,13 @@ const mixed = "alpha one\nbeta two\ngamma three\nalpha four\nbeta five\ndelta si
 func TestMultipleOnlyRulesAreOred(t *testing.T) {
 	a, _ := newTestApp(t, mixed)
 
-	a.addRule(filter.Only, "alpha", filter.Color{})
+	a.addRule(filter.Only, "alpha", color.RGB{})
 	waitFiltered(t, a)
 	if got := len(visible(t, a)); got != 2 {
 		t.Fatalf("one only rule shows %d lines, want 2", got)
 	}
 
-	a.addRule(filter.Only, "beta", filter.Color{})
+	a.addRule(filter.Only, "beta", color.RGB{})
 	waitFiltered(t, a)
 
 	got := visible(t, a)
@@ -51,7 +52,7 @@ func TestMultipleOnlyRulesAreOred(t *testing.T) {
 	}
 
 	// A third widens again.
-	a.addRule(filter.Only, "delta", filter.Color{})
+	a.addRule(filter.Only, "delta", color.RGB{})
 	waitFiltered(t, a)
 	if got := len(visible(t, a)); got != 5 {
 		t.Fatalf("three only rules show %d lines, want 5", got)
@@ -63,7 +64,7 @@ func TestMultipleOnlyRulesAreOred(t *testing.T) {
 // view, and it must find the lines that filter is hiding.
 func TestSecondOnlyThroughTheWindow(t *testing.T) {
 	a, _ := newTestApp(t, mixed)
-	a.addRule(filter.Only, "alpha", filter.Color{})
+	a.addRule(filter.Only, "alpha", color.RGB{})
 	waitFiltered(t, a)
 
 	f := openFinderWith(t, a, '&', "beta")
@@ -82,11 +83,11 @@ func TestSecondOnlyThroughTheWindow(t *testing.T) {
 // the only rules let through.
 func TestNeverNarrowsAlongsideOnlys(t *testing.T) {
 	a, _ := newTestApp(t, mixed)
-	a.addRule(filter.Only, "alpha", filter.Color{})
-	a.addRule(filter.Only, "beta", filter.Color{})
+	a.addRule(filter.Only, "alpha", color.RGB{})
+	a.addRule(filter.Only, "beta", color.RGB{})
 	waitFiltered(t, a)
 
-	a.addRule(filter.Never, "four", filter.Color{})
+	a.addRule(filter.Never, "four", color.RGB{})
 	waitFiltered(t, a)
 
 	got := visible(t, a)
@@ -102,8 +103,8 @@ func TestNeverNarrowsAlongsideOnlys(t *testing.T) {
 
 func TestDisablingOneOnlyNarrowsToTheRest(t *testing.T) {
 	a, _ := newTestApp(t, mixed)
-	a.addRule(filter.Only, "alpha", filter.Color{})
-	a.addRule(filter.Only, "beta", filter.Color{})
+	a.addRule(filter.Only, "alpha", color.RGB{})
+	a.addRule(filter.Only, "beta", color.RGB{})
 	waitFiltered(t, a)
 
 	a.applyRules(a.rules.Toggle(1), false) // drop beta
@@ -123,9 +124,9 @@ func TestDisablingOneOnlyNarrowsToTheRest(t *testing.T) {
 // have to work out by experiment.
 func TestRuleListExplainsHowRulesCombine(t *testing.T) {
 	a, scr := newTestApp(t, mixed)
-	a.addRule(filter.Only, "alpha", filter.Color{})
-	a.addRule(filter.Only, "beta", filter.Color{})
-	a.addRule(filter.Never, "four", filter.Color{})
+	a.addRule(filter.Only, "alpha", color.RGB{})
+	a.addRule(filter.Only, "beta", color.RGB{})
+	a.addRule(filter.Never, "four", color.RGB{})
 	waitFiltered(t, a)
 
 	run(a, "filter-list")

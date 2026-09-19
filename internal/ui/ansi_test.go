@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
 )
@@ -135,7 +136,7 @@ func TestTheSyntaxProfileKeepsWhatTheColoursDoNotCover(t *testing.T) {
 // findable in a log that is already painted end to end.
 func TestRulesWinOverTheLineSColours(t *testing.T) {
 	a, scr := newTestApp(t, "\x1b[31mred needle here\x1b[0m\n")
-	a.addRule(filter.Highlight, "needle", filter.Color{R: 0x00, G: 0xff, B: 0xff})
+	a.addRule(filter.Highlight, "needle", color.RGB{R: 0x00, G: 0xff, B: 0xff})
 	a.draw()
 
 	st := rowStyles(scr, 0)

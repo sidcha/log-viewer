@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
@@ -56,8 +57,8 @@ func TestCtrlLClearsTheSearch(t *testing.T) {
 // away a transient search must not throw away the highlights you built.
 func TestClearingTheSearchKeepsRuleHighlights(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Highlight, "bad", filter.Color{})
-	a.addRule(filter.Only, "line", filter.Color{})
+	a.addRule(filter.Highlight, "bad", color.RGB{})
+	a.addRule(filter.Only, "line", color.RGB{})
 	waitFiltered(t, a)
 	a.doSearch("ERROR", false)
 
@@ -81,7 +82,7 @@ func TestNohlsearchClearsOnlyTheSearch(t *testing.T) {
 	for _, alias := range []string{"noh", "nohl", "nohlsearch"} {
 		t.Run(alias, func(t *testing.T) {
 			a, _ := newTestApp(t, numbered(40))
-			a.addRule(filter.Highlight, "bad", filter.Color{})
+			a.addRule(filter.Highlight, "bad", color.RGB{})
 			a.doSearch("ERROR", false)
 
 			a.runCommandLine(alias)
@@ -101,8 +102,8 @@ func TestNohlsearchClearsOnlyTheSearch(t *testing.T) {
 // n and N.
 func TestHighlightClearLeavesTheSearch(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Highlight, "bad", filter.Color{})
-	a.addRule(filter.Never, "nothing", filter.Color{})
+	a.addRule(filter.Highlight, "bad", color.RGB{})
+	a.addRule(filter.Never, "nothing", color.RGB{})
 	waitFiltered(t, a)
 	a.doSearch("ERROR", false)
 
@@ -121,7 +122,7 @@ func TestHighlightClearLeavesTheSearch(t *testing.T) {
 
 func TestSearchNextStillWorksAfterHighlightClear(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
-	a.addRule(filter.Highlight, "bad", filter.Color{})
+	a.addRule(filter.Highlight, "bad", color.RGB{})
 	a.doSearch("ERROR", false)
 	waitBusy(t, a)
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -57,7 +58,7 @@ func TestCursorLineFollowsTheCursor(t *testing.T) {
 // text on a dark tint would be unreadable.
 func TestCursorLineKeepsRuleColours(t *testing.T) {
 	a, scr := newTestApp(t, "plain marked here\n")
-	a.addRule(filter.Highlight, "marked", filter.Color{})
+	a.addRule(filter.Highlight, "marked", color.RGB{})
 	a.draw()
 
 	markBg := a.styleFor(a.rules.All()[0].Color)

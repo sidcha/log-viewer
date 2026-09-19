@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"golang.org/x/sys/unix"
 )
 
@@ -61,11 +62,11 @@ func query(tty *os.File, timeout time.Duration) (Colors, bool) {
 	if !c.Known {
 		return Colors{}, false
 	}
-	if c.Foreground == (RGB{}) {
+	if c.Foreground == (color.RGB{}) {
 		// No foreground reported: assume the obvious contrast for this
 		// background, which is all the derived tints need.
 		if c.Background.Dark() {
-			c.Foreground = RGB{255, 255, 255}
+			c.Foreground = color.RGB{R: 255, G: 255, B: 255}
 		}
 	}
 	c.Dark = c.Background.Dark()

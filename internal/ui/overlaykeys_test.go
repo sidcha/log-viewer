@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -91,7 +92,7 @@ func TestOverlaySwallowsKeys(t *testing.T) {
 // which is worth more there than paging a list that fits on screen.
 func TestRulesListKeepsSpaceForToggling(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 	waitFiltered(t, a)
 	run(a, "filter-list")
 

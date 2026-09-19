@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/view"
 )
@@ -111,7 +112,7 @@ type finder struct {
 	// back is the direction a committed search steps in, for ?.
 	back bool
 
-	color filter.Color
+	color color.RGB
 	style tcell.Style
 }
 
@@ -411,7 +412,7 @@ func (a *App) commitFinder() {
 		*f.hist = appendHistory(*f.hist, pattern, a.opts().HistorySize)
 	}
 
-	kind, color, mode, editing, back := f.kind, f.color, f.mode, f.editing, f.back
+	kind, col, mode, editing, back := f.kind, f.color, f.mode, f.editing, f.back
 	row := f.selected()
 	var num int64
 	if row != nil {
@@ -424,7 +425,7 @@ func (a *App) commitFinder() {
 			a.replaceRuleMode(editing, pattern, mode)
 			return
 		}
-		a.addRuleMode(action, pattern, mode, color)
+		a.addRuleMode(action, pattern, mode, col)
 		return
 	}
 

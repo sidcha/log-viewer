@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
 )
@@ -123,7 +124,7 @@ type Preset struct {
 	Mode    filter.Mode
 	Pattern string
 	// Color is set when the file pins one; otherwise the viewer assigns it.
-	Color filter.Color
+	Color color.RGB
 	// M is the compiled pattern, under the configured case mode. Resolve
 	// fills it in, so a bad pattern fails the load like any other error.
 	M filter.Matcher
@@ -706,13 +707,12 @@ func validate(s *Setting, value string) error {
 // name the actions identically.
 func ParseAction(s string) (filter.Action, error) { return filter.ParseAction(s) }
 
-func parseRuleColor(v string) (filter.Color, error) {
+func parseRuleColor(v string) (color.RGB, error) {
 	c, err := parseColor(v)
 	if err != nil {
-		return filter.Color{}, err
+		return color.RGB{}, err
 	}
-	r, g, b := c.RGB()
-	return filter.Color{R: uint8(r), G: uint8(g), B: uint8(b)}, nil
+	return color.FromTcell(c), nil
 }
 
 func expandHome(p string) string {
@@ -759,8 +759,8 @@ func (c *Config) Dump() string {
 			if p.Mode != filter.Literal {
 				fmt.Fprintf(&b, " match=%s", p.Mode)
 			}
-			if p.Color != (filter.Color{}) {
-				fmt.Fprintf(&b, " color=#%02x%02x%02x", p.Color.R, p.Color.G, p.Color.B)
+			if p.Color != (color.RGB{}) {
+				fmt.Fprintf(&b, " color=%s", p.Color.Hex())
 			}
 			b.WriteByte('\n')
 		}

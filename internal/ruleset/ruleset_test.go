@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -209,7 +210,7 @@ func TestMinimalHandWrittenFile(t *testing.T) {
 		if !r.Enabled {
 			t.Errorf("rule %d should default to enabled", i)
 		}
-		if r.Color == (filter.Color{}) {
+		if r.Color == (color.RGB{}) {
 			t.Errorf("rule %d should have been assigned a colour", i)
 		}
 	}

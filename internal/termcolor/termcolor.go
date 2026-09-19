@@ -13,41 +13,19 @@
 package termcolor
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sidcha/log-viewer/internal/color"
 )
-
-// RGB is a 24-bit colour.
-type RGB struct{ R, G, B uint8 }
-
-// Hex renders the colour as #rrggbb.
-func (c RGB) Hex() string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
-
-// Luminance is perceived brightness, 0 to 1.
-func (c RGB) Luminance() float64 {
-	return (0.2126*float64(c.R) + 0.7152*float64(c.G) + 0.0722*float64(c.B)) / 255
-}
-
-// Dark reports whether text on this background should be light.
-func (c RGB) Dark() bool { return c.Luminance() < 0.5 }
-
-// Blend mixes a towards b by t, 0 to 1.
-func Blend(a, b RGB, t float64) RGB {
-	mix := func(x, y uint8) uint8 {
-		v := float64(x) + (float64(y)-float64(x))*t
-		return uint8(math.Round(math.Min(255, math.Max(0, v))))
-	}
-	return RGB{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B)}
-}
 
 // Colors is what lv managed to learn about the terminal.
 type Colors struct {
-	Foreground RGB
-	Background RGB
+	Foreground color.RGB
+	Background color.RGB
 	// Known is true when the terminal answered, so tints can be derived from
 	// its real colours rather than guessed.
 	Known bool
@@ -103,10 +81,10 @@ func fromEnv(v string) (dark bool, ok bool) {
 //
 // Replies look like ESC ] 11 ; rgb:rrrr/gggg/bbbb ST, with components of one to
 // four hex digits, which have to be scaled rather than truncated.
-func parseOSC(reply string) (RGB, bool) {
+func parseOSC(reply string) (color.RGB, bool) {
 	i := strings.Index(reply, "rgb:")
 	if i < 0 {
-		return RGB{}, false
+		return color.RGB{}, false
 	}
 	body := reply[i+len("rgb:"):]
 	for j, r := range body {
@@ -118,21 +96,21 @@ func parseOSC(reply string) (RGB, bool) {
 
 	parts := strings.Split(body, "/")
 	if len(parts) != 3 {
-		return RGB{}, false
+		return color.RGB{}, false
 	}
 	var out [3]uint8
 	for k, p := range parts {
 		if p == "" || len(p) > 4 {
-			return RGB{}, false
+			return color.RGB{}, false
 		}
 		v, err := strconv.ParseUint(p, 16, 32)
 		if err != nil {
-			return RGB{}, false
+			return color.RGB{}, false
 		}
 		max := float64(uint64(1)<<(4*len(p))) - 1
 		out[k] = uint8(math.Round(float64(v) / max * 255))
 	}
-	return RGB{out[0], out[1], out[2]}, true
+	return color.RGB{R: out[0], G: out[1], B: out[2]}, true
 }
 
 func isHex(c byte) bool {

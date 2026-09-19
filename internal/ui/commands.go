@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/export"
 	"github.com/sidcha/log-viewer/internal/filter"
@@ -104,7 +105,7 @@ func (a *App) ruleCommand(cmd config.Command, kind finderKind) {
 	if len(cmd.Args) == 1 {
 		action, _ := kind.rule()
 		pattern, mode := splitModePrefix(cmd.Args[0], defaultMode(kind))
-		a.addRuleMode(action, pattern, mode, filter.Color{})
+		a.addRuleMode(action, pattern, mode, color.RGB{})
 		return
 	}
 	a.openFinder(kind, "")
@@ -165,14 +166,14 @@ func (a *App) reload() {
 
 // ------------------------------------------------------------------- rules
 
-// addRule appends a literal-match rule. color may be zero, in which case one
+// addRule appends a literal-match rule. col may be zero, in which case one
 // is assigned.
-func (a *App) addRule(action filter.Action, pattern string, color filter.Color) {
-	a.addRuleMode(action, pattern, filter.Literal, color)
+func (a *App) addRule(action filter.Action, pattern string, col color.RGB) {
+	a.addRuleMode(action, pattern, filter.Literal, col)
 }
 
 // addRuleMode appends a rule read in a given mode.
-func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode, color filter.Color) {
+func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode, col color.RGB) {
 	m, err := filter.Compile(pattern, mode, a.opts().Case)
 	if err != nil {
 		a.errorf("bad pattern: %v", err)
@@ -182,7 +183,7 @@ func (a *App) addRuleMode(action filter.Action, pattern string, mode filter.Mode
 		Action:  action,
 		M:       m,
 		Enabled: true,
-		Color:   color,
+		Color:   col,
 	}), true)
 
 	switch action {

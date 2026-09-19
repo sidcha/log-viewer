@@ -3,6 +3,8 @@ package filter
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sidcha/log-viewer/internal/color"
 )
 
 // Action is what a rule does with the lines it matches.
@@ -50,7 +52,7 @@ type Rule struct {
 	// Color marks this rule's matches on screen. Every rule carries one, so a
 	// line kept by one rule and a line marked by another are told apart at a
 	// glance.
-	Color Color
+	Color color.RGB
 }
 
 // Set is the ordered list of rules the viewer is applying.
@@ -103,8 +105,8 @@ func (s *Set) Filtering() bool {
 }
 
 // Colors lists the colours already in use, so a new rule can avoid them.
-func (s *Set) Colors() []Color {
-	out := make([]Color, 0, len(s.rules))
+func (s *Set) Colors() []color.RGB {
+	out := make([]color.RGB, 0, len(s.rules))
 	for _, r := range s.rules {
 		out = append(out, r.Color)
 	}
@@ -131,7 +133,7 @@ func (s *Set) recount() {
 // distinct from the colours already present.
 func (s *Set) Add(r Rule) *Set {
 	n := s.clone()
-	if r.Color == (Color{}) {
+	if r.Color == (color.RGB{}) {
 		r.Color = NextColor(s.Colors())
 	}
 	n.rules = append(n.rules, r)
@@ -289,7 +291,7 @@ func (s *Set) Replace(i int, r Rule) *Set {
 		return s
 	}
 	n := s.clone()
-	if r.Color == (Color{}) {
+	if r.Color == (color.RGB{}) {
 		r.Color = n.rules[i].Color
 	}
 	n.rules[i] = r

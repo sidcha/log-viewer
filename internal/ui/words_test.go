@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -144,7 +145,7 @@ func TestWordMotionsFollowTheView(t *testing.T) {
 	}
 	a, _ := newTestApp(t, src)
 
-	a.addRule(filter.Only, "keep", filter.Color{})
+	a.addRule(filter.Only, "keep", color.RGB{})
 	waitFiltered(t, a)
 
 	keys(a, "w") // onto "here" on the first kept line

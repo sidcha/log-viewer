@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
@@ -382,7 +383,7 @@ func TestHighlightStylesMatchingText(t *testing.T) {
 	a.draw()
 	_, _, before, _ := scr.GetContent(0, 0)
 
-	a.addRule(filter.Highlight, "text", filter.Color{})
+	a.addRule(filter.Highlight, "text", color.RGB{})
 	a.draw()
 
 	// "text" starts at column 6.

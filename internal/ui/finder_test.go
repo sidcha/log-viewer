@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -314,7 +315,7 @@ func TestFinderNeverStrikesOutWhatItWouldRemove(t *testing.T) {
 func TestFinderOnlySeesPastTheFilter(t *testing.T) {
 	a, _ := newTestApp(t, numbered(120))
 
-	a.addRule(filter.Only, "line 003", filter.Color{})
+	a.addRule(filter.Only, "line 003", color.RGB{})
 	waitFiltered(t, a)
 	if a.viewLen() > 2 {
 		t.Fatalf("expected a narrow view, got %d lines", a.viewLen())
@@ -331,7 +332,7 @@ func TestFinderOnlySeesPastTheFilter(t *testing.T) {
 func TestFinderNeverRulesStillApplyWhenWidening(t *testing.T) {
 	a, _ := newTestApp(t, numbered(120))
 
-	a.addRule(filter.Never, "ERROR", filter.Color{})
+	a.addRule(filter.Never, "ERROR", color.RGB{})
 	waitFiltered(t, a)
 
 	f := openFinderWith(t, a, '&', "line")
@@ -345,7 +346,7 @@ func TestFinderNeverRulesStillApplyWhenWidening(t *testing.T) {
 // TestFinderEditRuleReplacesInPlace rather than adding a second rule.
 func TestFinderEditRuleReplacesInPlace(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
-	a.addRule(filter.Never, "ERROR", filter.Color{})
+	a.addRule(filter.Never, "ERROR", color.RGB{})
 	waitFiltered(t, a)
 
 	a.editRule(0)

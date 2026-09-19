@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -369,7 +370,7 @@ func TestYankFromFilteredViewCopiesWhatIsShown(t *testing.T) {
 	a, _ := newTestApp(t, numbered(60))
 	out := clipboardSink(t, a)
 
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 	waitFiltered(t, a)
 
 	keys(a, "Vj")

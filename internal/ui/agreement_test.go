@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -289,7 +290,7 @@ func TestNothingChangesWhileTheWindowIsOpen(t *testing.T) {
 	for _, key := range []rune{'/', '?', 'f', '&', '!', 'm'} {
 		t.Run(string(key), func(t *testing.T) {
 			a, _ := newTestApp(t, numbered(200))
-			a.addRule(filter.Never, "line 01", filter.Color{})
+			a.addRule(filter.Never, "line 01", color.RGB{})
 			waitFiltered(t, a)
 			a.setCursor(40)
 			a.doSearch("INFO", false)

@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/highlight"
 	"github.com/sidcha/log-viewer/internal/index"
@@ -263,11 +264,7 @@ func deriveStyles(cfg *config.Config, term termcolor.Colors) {
 	bg, fg := term.Background, term.Foreground
 
 	cfg.SetDerivedStyle("cursor.line", tcell.StyleDefault.
-		Background(toTcell(termcolor.Blend(bg, fg, float64(cfg.Options().CursorLineTint)/100))))
-}
-
-func toTcell(c termcolor.RGB) tcell.Color {
-	return tcell.NewRGBColor(int32(c.R), int32(c.G), int32(c.B))
+		Background(color.Blend(bg, fg, float64(cfg.Options().CursorLineTint)/100).Tcell()))
 }
 
 func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rules *ruleset.File, opt *options) error {

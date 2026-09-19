@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/sidcha/log-viewer/internal/atomicfile"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
 
@@ -171,23 +172,16 @@ func (f *File) Digest() string {
 	return b.String()
 }
 
-func colorHex(c filter.Color) string {
-	if c == (filter.Color{}) {
+func colorHex(c color.RGB) string {
+	if c == (color.RGB{}) {
 		return ""
 	}
-	return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
+	return c.Hex()
 }
 
-func parseHex(s string) (filter.Color, error) {
+func parseHex(s string) (color.RGB, error) {
 	if s == "" {
-		return filter.Color{}, nil
+		return color.RGB{}, nil
 	}
-	var r, g, b uint8
-	if len(s) != 7 || s[0] != '#' {
-		return filter.Color{}, fmt.Errorf("colour %q: expected #rrggbb", s)
-	}
-	if _, err := fmt.Sscanf(s, "#%02x%02x%02x", &r, &g, &b); err != nil {
-		return filter.Color{}, fmt.Errorf("colour %q: %w", s, err)
-	}
-	return filter.Color{R: r, G: g, B: b}, nil
+	return color.ParseHex(s)
 }

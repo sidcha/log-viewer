@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
@@ -59,8 +60,8 @@ func TestHelpExplainsTheKeyNotation(t *testing.T) {
 
 func TestZmClearsHighlights(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
-	a.addRule(filter.Highlight, "bad", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
+	a.addRule(filter.Highlight, "bad", color.RGB{})
 	waitFiltered(t, a)
 
 	keys(a, "zm")

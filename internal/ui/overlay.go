@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
@@ -25,7 +26,7 @@ type ovRow struct {
 	dim   bool
 	// swatch, when set, is drawn as a colour block before the text so each
 	// rule's colour is identifiable in the list.
-	swatch filter.Color
+	swatch color.RGB
 }
 
 type overlay struct {
@@ -154,7 +155,7 @@ func (o *overlay) drawPanel(a *App, w, h int) {
 		idx := o.top + i
 		rowStyle := st
 		text := ""
-		var swatch filter.Color
+		var swatch color.RGB
 		if idx < len(o.rows) {
 			r := o.rows[idx]
 			text = r.text
@@ -175,7 +176,7 @@ func (o *overlay) drawPanel(a *App, w, h int) {
 		text += strings.Repeat(" ", inner-len([]rune(text)))
 		a.putStr(x0+1, y, text, rowStyle)
 
-		if swatch != (filter.Color{}) {
+		if swatch != (color.RGB{}) {
 			a.putStr(x0+1, y, "  ", a.styleFor(swatch))
 		}
 	}

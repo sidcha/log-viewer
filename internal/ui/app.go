@@ -11,6 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/sidcha/log-viewer/internal/ansi"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
@@ -555,11 +556,10 @@ func (a *App) Source() *source.Source { return a.src }
 
 // styleFor turns a rule's colour into a drawable style, choosing text that
 // reads against it.
-func (a *App) styleFor(c filter.Color) tcell.Style {
-	bg := tcell.NewRGBColor(int32(c.R), int32(c.G), int32(c.B))
+func (a *App) styleFor(c color.RGB) tcell.Style {
 	fg := tcell.ColorWhite
-	if c.Luminance() > 0.5 {
+	if !c.Dark() {
 		fg = tcell.ColorBlack
 	}
-	return tcell.StyleDefault.Background(bg).Foreground(fg)
+	return tcell.StyleDefault.Background(c.Tcell()).Foreground(fg)
 }

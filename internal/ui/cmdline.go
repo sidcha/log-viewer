@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
 )
@@ -123,7 +124,7 @@ func (a *App) recolourRule(i int) {
 	// Exclude this rule's own colour from the set being avoided, or it would
 	// be treated as one to stay away from and the choice would be needlessly
 	// constrained.
-	used := make([]filter.Color, 0, len(rules))
+	used := make([]color.RGB, 0, len(rules))
 	for j, r := range rules {
 		if j != i {
 			used = append(used, r.Color)

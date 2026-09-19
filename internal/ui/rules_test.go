@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/ruleset"
 )
@@ -28,7 +29,7 @@ func TestQuitIsSilentWithNothingToLose(t *testing.T) {
 
 func TestQuitAsksWhenRulesExist(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 	waitFiltered(t, a)
 
 	quitKey(a)
@@ -93,7 +94,7 @@ func TestSearchDoesNotDirtyASavedSet(t *testing.T) {
 
 func TestEscapeCancelsTheQuestion(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	quitKey(a)
 	a.key(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
@@ -106,7 +107,7 @@ func TestEscapeCancelsTheQuestion(t *testing.T) {
 // keys count, so leaning on the keyboard cannot discard the rules.
 func TestStrayKeyDoesNotAnswer(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	quitKey(a)
 	keys(a, "zqj8")
@@ -120,7 +121,7 @@ func TestStrayKeyDoesNotAnswer(t *testing.T) {
 
 func TestQuitDiscard(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	quitKey(a)
 	keys(a, "n")
@@ -131,7 +132,7 @@ func TestQuitDiscard(t *testing.T) {
 
 func TestQuitForceNeverAsks(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	keys(a, "ZQ")
 	if a.confirm != nil {
@@ -144,8 +145,8 @@ func TestQuitForceNeverAsks(t *testing.T) {
 
 func TestQuitSaveAsThenQuit(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
-	a.addRule(filter.Highlight, "bad", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
+	a.addRule(filter.Highlight, "bad", color.RGB{})
 
 	path := filepath.Join(t.TempDir(), "rules.json")
 
@@ -173,7 +174,7 @@ func TestQuitSaveAsThenQuit(t *testing.T) {
 // a bad path must leave the session alive so the user can try again.
 func TestFailedSaveDoesNotQuit(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	file := filepath.Join(t.TempDir(), "notadir")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
@@ -220,7 +221,7 @@ func TestLoadedRulesOfferToUpdateInPlace(t *testing.T) {
 
 	// Change something and it offers to update that same file.
 	a.quit = false
-	a.addRule(filter.Never, "INFO", filter.Color{})
+	a.addRule(filter.Never, "INFO", color.RGB{})
 	waitFiltered(t, a)
 
 	quitKey(a)
@@ -255,7 +256,7 @@ func TestLoadedRulesSaveAsElsewhere(t *testing.T) {
 	if err := a.LoadRules(orig); err != nil {
 		t.Fatal(err)
 	}
-	a.addRule(filter.Never, "INFO", filter.Color{})
+	a.addRule(filter.Never, "INFO", color.RGB{})
 	waitFiltered(t, a)
 
 	other := filepath.Join(dir, "other.json")
@@ -291,7 +292,7 @@ func TestLoadedRulesSaveAsElsewhere(t *testing.T) {
 
 func TestSavingClearsTheQuestion(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	a.addRule(filter.Only, "ERROR", filter.Color{})
+	a.addRule(filter.Only, "ERROR", color.RGB{})
 
 	path := filepath.Join(t.TempDir(), "rules.json")
 	a.runCommandLine("rules-save " + path)
@@ -310,8 +311,8 @@ func TestRulesRoundTripThroughASession(t *testing.T) {
 	path := filepath.Join(dir, "rules.json")
 
 	first, _ := newTestApp(t, numbered(90))
-	first.addRule(filter.Only, "ERROR", filter.Color{})
-	first.addRule(filter.Highlight, "bad", filter.Color{})
+	first.addRule(filter.Only, "ERROR", color.RGB{})
+	first.addRule(filter.Highlight, "bad", color.RGB{})
 	first.applyRules(first.rules.Toggle(1), false) // leave one disabled
 	waitFiltered(t, first)
 
@@ -352,7 +353,7 @@ func TestLoadRulesDuringASession(t *testing.T) {
 	}
 
 	a, _ := newTestApp(t, numbered(60))
-	a.addRule(filter.Only, "nothing-matches-this", filter.Color{})
+	a.addRule(filter.Only, "nothing-matches-this", color.RGB{})
 	waitFiltered(t, a)
 
 	a.runCommandLine("source " + path)
@@ -382,7 +383,7 @@ func TestSavedRulesUseTheSessionCase(t *testing.T) {
 	if err := a.cfg.Set("case", "sensitive"); err != nil {
 		t.Fatal(err)
 	}
-	a.addRule(filter.Only, "error", filter.Color{})
+	a.addRule(filter.Only, "error", color.RGB{})
 
 	path := filepath.Join(t.TempDir(), "rules.json")
 	if !a.saveRules(path) {
