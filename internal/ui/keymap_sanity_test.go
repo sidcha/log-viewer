@@ -17,7 +17,7 @@ func TestNoDefaultBindingNeedsAlt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range append(append([]config.Bind{}, cfg.Binds()...), cfg.VisualBinds()...) {
+	for _, b := range allBinds(cfg) {
 		for _, k := range b.Keys {
 			if k.Mod&tcell.ModAlt != 0 {
 				t.Errorf("%s (%s) needs Alt", b.Spec, b.Cmd)
@@ -81,7 +81,7 @@ func TestEveryDefaultBindingIsTypable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range append(append([]config.Bind{}, cfg.Binds()...), cfg.VisualBinds()...) {
+	for _, b := range allBinds(cfg) {
 		if len(b.Keys) == 0 {
 			t.Errorf("%s binds no keys", b.Spec)
 			continue
@@ -90,4 +90,12 @@ func TestEveryDefaultBindingIsTypable(t *testing.T) {
 			t.Errorf("%s is %d keys long; sequences that long are not muscle memory", b.Spec, len(b.Keys))
 		}
 	}
+}
+
+func allBinds(cfg *config.Config) []config.Bind {
+	var out []config.Bind
+	for _, t := range config.Tables {
+		out = append(out, cfg.Binds(t.Name)...)
+	}
+	return out
 }

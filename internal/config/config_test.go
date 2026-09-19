@@ -152,7 +152,7 @@ func TestBuiltinConfigLoads(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(c.Binds()) == 0 {
+	if len(c.Binds("normal")) == 0 {
 		t.Error("no key bindings in the built-in config")
 	}
 	if len(c.Profiles()) == 0 {
@@ -172,7 +172,7 @@ func TestBuiltinConfigLoads(t *testing.T) {
 	}
 
 	q, _ := ParseKey("q")
-	if cmd, ok := c.Command(q); !ok || cmd.Name != "quit" {
+	if cmd, ok := command(c, q); !ok || cmd.Name != "quit" {
 		t.Errorf("q is bound to %v (ok=%v), want quit", cmd, ok)
 	}
 }
@@ -192,8 +192,10 @@ func TestDumpConfigRoundTrips(t *testing.T) {
 	if err := c2.Resolve(); err != nil {
 		t.Fatalf("re-resolving --dump-config output failed: %v", err)
 	}
-	if len(c2.Binds()) != len(c.Binds()) {
-		t.Errorf("round trip changed binding count: %d -> %d", len(c.Binds()), len(c2.Binds()))
+	for _, tb := range Tables {
+		if len(c2.Binds(tb.Name)) != len(c.Binds(tb.Name)) {
+			t.Errorf("round trip changed %s binding count: %d -> %d", tb.Name, len(c.Binds(tb.Name)), len(c2.Binds(tb.Name)))
+		}
 	}
 	if len(c2.Profiles()) != len(c.Profiles()) {
 		t.Errorf("round trip changed profile count: %d -> %d", len(c.Profiles()), len(c2.Profiles()))
@@ -228,11 +230,11 @@ profile kernel {
 	}
 
 	q, _ := ParseKey("q")
-	if _, ok := c.Command(q); ok {
+	if _, ok := command(c, q); ok {
 		t.Error("q should have been unbound")
 	}
 	bigQ, _ := ParseKey("Q")
-	if cmd, ok := c.Command(bigQ); !ok || cmd.Name != "quit" {
+	if cmd, ok := command(c, bigQ); !ok || cmd.Name != "quit" {
 		t.Error("Q should be bound to quit")
 	}
 
@@ -327,11 +329,10 @@ func TestEverySpecIsReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	bound := map[string]bool{}
-	for _, b := range c.Binds() {
-		bound[b.Cmd.Name] = true
-	}
-	for _, b := range c.VisualBinds() {
-		bound[b.Cmd.Name] = true
+	for _, tb := range Tables {
+		for _, b := range c.Binds(tb.Name) {
+			bound[b.Cmd.Name] = true
+		}
 	}
 	for _, s := range Specs {
 		if commandLineOnly[s.Name] {
@@ -485,4 +486,9 @@ func TestWithBackgroundReplaysWithoutRereading(t *testing.T) {
 	if got.Style("cursor.line") == pre.Style("cursor.line") {
 		t.Error("the light block did not apply")
 	}
+}
+
+func command(c *Config, k Key) (Command, bool) {
+	cmd, m := c.Lookup([]Key{k})
+	return cmd, m == Full
 }

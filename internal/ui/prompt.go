@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/sidcha/log-viewer/internal/config"
 )
 
@@ -51,66 +50,16 @@ func (a *App) closePrompt() {
 	a.scr.HideCursor()
 }
 
-func (a *App) promptKey(ev *tcell.EventKey) {
+// acceptLine runs what was typed at the prompt.
+func (a *App) acceptLine() {
 	p := a.prompt
-
-	switch ev.Key() {
-	case tcell.KeyEnter:
-		text := string(p.buf)
-		if p.hist != nil && strings.TrimSpace(text) != "" {
-			*p.hist = appendHistory(*p.hist, text, a.opts().HistorySize)
-		}
-		kind, then := p.kind, p.then
-		a.closePrompt()
-		a.acceptPrompt(kind, text, then)
-		return
-
-	case tcell.KeyEscape, tcell.KeyCtrlG:
-		a.closePrompt()
-		return
-
-	case tcell.KeyTab:
-		if p.kind == pCommand {
-			a.completeCommand(p)
-		}
-		return
-
-	case tcell.KeyLeft:
-		p.left()
-	case tcell.KeyRight:
-		p.right()
-	case tcell.KeyHome, tcell.KeyCtrlA:
-		p.home()
-	case tcell.KeyEnd, tcell.KeyCtrlE:
-		p.toEnd()
-
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if p.backspace() {
-			p.comps = nil
-		}
-	case tcell.KeyDelete, tcell.KeyCtrlD:
-		if p.del() {
-			p.comps = nil
-		}
-	case tcell.KeyCtrlU:
-		p.clear()
-		p.comps = nil
-	case tcell.KeyCtrlK:
-		p.killEnd()
-		p.comps = nil
-	case tcell.KeyCtrlW:
-		p.deleteWord()
-		p.comps = nil
-
-	case tcell.KeyUp, tcell.KeyCtrlP:
-		p.history(-1)
-	case tcell.KeyDown, tcell.KeyCtrlN:
-		p.history(1)
-
-	case tcell.KeyRune:
-		p.insert(ev.Rune())
-		p.comps = nil
+	text := p.text()
+	if p.hist != nil && strings.TrimSpace(text) != "" {
+		*p.hist = appendHistory(*p.hist, text, a.opts().HistorySize)
 	}
+	kind, then := p.kind, p.then
+	a.closePrompt()
+	a.acceptPrompt(kind, text, then)
 }
 
 // completeCommand fills in a command name from the first word, cycling through

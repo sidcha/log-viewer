@@ -344,7 +344,9 @@ bind gg        goto-start
 bind <C-d>     half-page-down
 unbind q
 bind ZQ        quit
-bind-visual y  yank
+bind -T visual y        yank
+bind -T finder <C-t>    finder-toggle-regex
+bind -T confirm <Enter> confirm-yes
 
 rule never     'GET /healthz'
 rule highlight 'OOM|oom-killer' match=regex color=#ff5555
@@ -364,6 +366,25 @@ profile myapp {
     rule '\b(WARN|ERROR)\b' syntax.level.error
 }
 ```
+
+Every key lv answers to is bound in a table named for the mode it works in,
+so every one of them can be rebound. `bind` without `-T` means `normal`, the
+log itself. A key a table leaves unbound falls through to the one it builds on:
+
+| table | when | falls back to |
+|---|---|---|
+| `normal` | reading the log | |
+| `visual` | while selecting | `normal` |
+| `line` | editing a line of text | |
+| `prompt` | at the `:` and path prompts | `line` |
+| `finder` | in the match window | `line` |
+| `overlay` | in a panel: help, rules | |
+| `rules` | in the rule list | `overlay` |
+| `confirm` | answering a question | |
+
+Each table takes the commands that make sense in its mode, and `lv
+--dump-config` lists them all. `bind-visual` is kept as another way to write
+`bind -T visual`.
 
 A binding is one key (`C-a`, `PgUp`), a short bare sequence (`gg`, `zz`), or vim
 notation where anything in angle brackets is a single key (`<C-w>s`). A longer

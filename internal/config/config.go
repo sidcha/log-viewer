@@ -109,12 +109,12 @@ var settingIndex = func() map[string]*Setting {
 	return m
 }()
 
-// Bind associates a key sequence with a command.
+// Bind associates a key sequence with a command in one key table.
 type Bind struct {
-	Keys   []Key
-	Spec   string
-	Cmd    Command
-	Visual bool
+	Keys  []Key
+	Spec  string
+	Cmd   Command
+	Table string
 }
 
 // Preset is a rule declared in configuration rather than added at runtime.
@@ -143,11 +143,11 @@ func LookupSetting(name string) (*Setting, bool) {
 
 // Config is the fully resolved configuration.
 type Config struct {
-	values   map[string]string
-	root     *keyNode
-	vroot    *keyNode
-	order    []Bind
-	vorder   []Bind
+	values map[string]string
+	// tables holds each key table's trie, and orders its bindings in the
+	// order they were declared.
+	tables   map[string]*keyNode
+	orders   map[string][]Bind
 	styles   map[string]tcell.Style
 	profiles []*highlight.Profile
 	presets  []Preset
@@ -178,8 +178,8 @@ type Config struct {
 func New() *Config {
 	c := &Config{
 		values:       make(map[string]string, len(Settings)),
-		root:         &keyNode{},
-		vroot:        &keyNode{},
+		tables:       make(map[string]*keyNode),
+		orders:       make(map[string][]Bind),
 		styles:       make(map[string]tcell.Style),
 		sourced:      make(map[string]bool),
 		parsed:       make(map[string][]stmt),
@@ -274,19 +274,6 @@ func (c *Config) Case() filter.Case {
 	cs, _ := filter.ParseCase(c.Str("case"))
 	return cs
 }
-
-// Command returns the command bound to a single key, for callers that do not
-// need sequence handling.
-func (c *Config) Command(k Key) (Command, bool) {
-	cmd, m := c.Lookup([]Key{k})
-	return cmd, m == Full
-}
-
-// Binds lists normal-mode bindings in declaration order, for the help overlay.
-func (c *Config) Binds() []Bind { return c.order }
-
-// VisualBinds lists visual-mode bindings.
-func (c *Config) VisualBinds() []Bind { return c.vorder }
 
 // Background is the resolved terminal background, "dark" or "light".
 func (c *Config) Background() string { return c.background }
@@ -451,9 +438,13 @@ func (c *Config) directive(st stmt) error {
 			return st.errf("%v", err)
 		}
 
-	case "bind":
+	case "bind", "bind-visual":
+		table, w := keyTableFlag(w)
+		if w[0] == "bind-visual" {
+			table = "visual"
+		}
 		if len(w) < 3 {
-			return st.errf("usage: bind <key> <command> [args...]")
+			return st.errf("usage: bind [-T table] <key> <command> [args...]")
 		}
 		seq, err := ParseSequence(w[1])
 		if err != nil {
@@ -463,41 +454,25 @@ func (c *Config) directive(st stmt) error {
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		c.bindSeq(seq, w[1], cmd)
-
-	case "bind-visual":
-		if len(w) < 3 {
-			return st.errf("usage: bind-visual <key> <command> [args...]")
-		}
-		seq, err := ParseSequence(w[1])
-		if err != nil {
+		if err := c.bind(table, seq, w[1], cmd); err != nil {
 			return st.errf("%v", err)
 		}
-		cmd, err := ParseCommand(w[2:])
-		if err != nil {
-			return st.errf("%v", err)
-		}
-		c.bindVisual(seq, w[1], cmd)
 
-	case "unbind-visual":
+	case "unbind", "unbind-visual":
+		table, w := keyTableFlag(w)
+		if w[0] == "unbind-visual" {
+			table = "visual"
+		}
 		if len(w) != 2 {
-			return st.errf("usage: unbind-visual <key>")
+			return st.errf("usage: unbind [-T table] <key>")
 		}
 		seq, err := ParseSequence(w[1])
 		if err != nil {
 			return st.errf("%v", err)
 		}
-		c.unbindVisual(seq)
-
-	case "unbind":
-		if len(w) != 2 {
-			return st.errf("usage: unbind <key>")
-		}
-		seq, err := ParseSequence(w[1])
-		if err != nil {
+		if err := c.unbind(table, seq); err != nil {
 			return st.errf("%v", err)
 		}
-		c.unbindSeq(seq)
 
 	case "style":
 		if len(w) < 3 {
@@ -562,6 +537,15 @@ func (c *Config) directive(st stmt) error {
 		return st.errf("unknown directive %q", w[0])
 	}
 	return nil
+}
+
+// keyTableFlag takes a `-T table` option off a bind or unbind directive,
+// defaulting to the normal table, and returns the words without it.
+func keyTableFlag(w []string) (string, []string) {
+	if len(w) >= 3 && w[1] == "-T" {
+		return w[2], append([]string{w[0]}, w[3:]...)
+	}
+	return "normal", w
 }
 
 func (c *Config) block(head stmt, body []stmt) error {
@@ -783,11 +767,14 @@ func (c *Config) Dump() string {
 	}
 
 	b.WriteString("\n# key bindings\n")
-	for _, bd := range c.order {
-		fmt.Fprintf(&b, "bind %-10s %s\n", quoteWord(bd.Spec), bd.Cmd)
-	}
-	for _, bd := range c.vorder {
-		fmt.Fprintf(&b, "bind-visual %-10s %s\n", quoteWord(bd.Spec), bd.Cmd)
+	for _, t := range Tables {
+		flag := ""
+		if t.Name != "normal" {
+			flag = "-T " + t.Name + " "
+		}
+		for _, bd := range c.orders[t.Name] {
+			fmt.Fprintf(&b, "bind %s%-10s %s\n", flag, quoteWord(bd.Spec), bd.Cmd)
+		}
 	}
 
 	for _, p := range c.profiles {

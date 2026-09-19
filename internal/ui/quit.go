@@ -34,23 +34,23 @@ func (a *App) askSaveRules(next func()) {
 	if a.rulesPath != "" {
 		a.ask("Rules changed. Update "+filepath.Base(a.rulesPath)+"?",
 			nil,
-			choice{'y', "update", func() {
+			choice{answerYes, "update", func() {
 				if a.saveRules(a.rulesPath) {
 					next()
 				}
 			}},
-			choice{'n', "discard", next},
-			choice{'a', "save as…", func() { a.promptSaveRules(next) }},
-			choice{'c', "cancel", nil},
+			choice{answerNo, "discard", next},
+			choice{answerOther, "save as…", func() { a.promptSaveRules(next) }},
+			choice{answerCancel, "cancel", nil},
 		)
 		return
 	}
 
 	a.ask("Save rules before quitting?",
 		nil,
-		choice{'y', "save as…", func() { a.promptSaveRules(next) }},
-		choice{'n', "discard", next},
-		choice{'c', "cancel", nil},
+		choice{answerYes, "save as…", func() { a.promptSaveRules(next) }},
+		choice{answerNo, "discard", next},
+		choice{answerCancel, "cancel", nil},
 	)
 }
 
@@ -86,9 +86,9 @@ func (a *App) askSaveStream(next func()) {
 
 	a.ask("Piped input is not on disk. Keep it?",
 		nil,
-		choice{'y', "save all…", func() { a.promptSaveStream(next) }},
-		choice{'n', "discard", next},
-		choice{'c', "cancel", nil},
+		choice{answerYes, "save all…", func() { a.promptSaveStream(next) }},
+		choice{answerNo, "discard", next},
+		choice{answerCancel, "cancel", nil},
 	)
 }
 

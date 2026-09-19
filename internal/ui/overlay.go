@@ -208,168 +208,47 @@ func (a *App) putStr(x, y int, s string, st tcell.Style) {
 	}
 }
 
-// overlayKey handles a key while an overlay is open.
-//
-// It always reports the key as consumed. Letting an unrecognised key through
-// meant the log scrolled about behind the help, and a stray `/` opened a search
-// prompt under a panel covering it. A panel on screen owns the keyboard; q and
-// Escape close it.
-func (a *App) overlayKey(ev *tcell.EventKey) bool {
-	o := a.ov
-
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		a.ov = nil
-	case tcell.KeyUp:
-		o.moveSel(-1)
-	case tcell.KeyDown:
-		o.moveSel(1)
-	case tcell.KeyPgUp, tcell.KeyCtrlB:
-		o.scroll(-o.page())
-	case tcell.KeyPgDn, tcell.KeyCtrlF:
-		o.scroll(o.page())
-	case tcell.KeyHome:
-		o.scroll(-len(o.rows))
-	case tcell.KeyEnd:
-		o.scroll(len(o.rows))
-	case tcell.KeyEnter:
-		if o.kind == ovRules {
-			if i := o.selected(); i >= 0 {
-				a.applyRules(a.rules.Toggle(i), true)
-				a.showRules()
-			}
-		}
-	case tcell.KeyRune:
-		a.overlayRune(o, ev.Rune(), ev.Modifiers())
+// selectedRule is the rule the rule list's selection is on, or -1.
+func (a *App) selectedRule() int {
+	if a.ov == nil || a.ov.kind != ovRules {
+		return -1
 	}
-	return true
+	return a.ov.selected()
 }
 
-// overlayRune dispatches a printable key inside a panel.
-//
-// The rules list claims a handful of letters for editing, so those are taken
-// first; everything else is panel navigation, shared by every overlay.
-func (a *App) overlayRune(o *overlay, r rune, mod tcell.ModMask) {
-	if o.kind == ovRules && a.rulesListRune(o, r) {
-		return
-	}
-
-	switch r {
-	case 'q':
-		a.ov = nil
-	case 'k':
-		o.moveSel(-1)
-	case 'j':
-		o.moveSel(1)
-	case 'g':
-		o.scroll(-len(o.rows))
-	case 'G':
-		o.scroll(len(o.rows))
-	case 'b':
-		o.scroll(-o.page())
-	case ' ':
-		// Shift-Space pages back, on terminals that report it.
-		if mod&tcell.ModShift != 0 {
-			o.scroll(-o.page())
-			return
-		}
-		o.scroll(o.page())
-	}
-}
-
-// rulesListRune handles the keys that edit rules, reporting whether it took
-// the key.
-func (a *App) rulesListRune(o *overlay, r rune) bool {
-	switch r {
-	case ' ':
-		if i := o.selected(); i >= 0 {
-			a.applyRules(a.rules.Toggle(i), true)
-			a.showRules()
-		}
-	case 'd', 'x':
-		if i := o.selected(); i >= 0 {
-			a.applyRules(a.rules.Remove(i), true)
-			a.showRules()
-		}
-	case 'e', 'i', 'c':
-		if i := o.selected(); i >= 0 {
-			a.ov = nil
-			a.editRule(i)
-		}
-	case 'a':
-		if i := o.selected(); i >= 0 {
-			a.cycleRuleAction(i)
-		}
-	case 'r':
-		if i := o.selected(); i >= 0 {
-			a.recolourRule(i)
-		}
-	case 'A':
-		a.applyRules(a.rules.SetAll(true), true)
-		a.showRules()
-	case 'D':
-		a.applyRules(a.rules.SetAll(false), true)
-		a.showRules()
-	default:
-		return false
-	}
-	return true
+// updateRuleList applies a change made from the rule list and redraws it.
+func (a *App) updateRuleList(next *filter.Set) {
+	a.applyRules(next, true)
+	a.showRules()
 }
 
 // ------------------------------------------------------------ overlay builders
 
 func (a *App) showHelp() {
-	o := &overlay{kind: ovHelp, title: "lv — key bindings", hint: "Space/b page  j/k line  g/G ends  Esc close"}
+	o := &overlay{kind: ovHelp, title: "lv — key bindings", hint: a.panelHint("overlay", "page", "panel-page-down", "panel-page-up", "close", "panel-close")}
 
+	// The log's own keys, grouped by what they do. Visual mode's are folded
+	// in, marked, since it is the log with a selection.
 	groups := map[string][]config.Bind{}
-	for _, b := range append(append([]config.Bind{}, a.cfg.Binds()...), a.cfg.VisualBinds()...) {
-		spec, ok := config.LookupCommand(b.Cmd.Name)
-		g := "other"
-		if ok {
-			g = spec.Group
+	for _, table := range []string{"normal", "visual"} {
+		for _, b := range a.cfg.Binds(table) {
+			g := "other"
+			if spec, ok := config.LookupCommand(b.Cmd.Name); ok {
+				g = spec.Group
+			}
+			groups[g] = append(groups[g], b)
 		}
-		groups[g] = append(groups[g], b)
+	}
+	for _, g := range []string{"motion", "search", "filter", "view", "select", "file", "other"} {
+		o.helpSection(strings.ToUpper(g), groups[g])
 	}
 
-	order := []string{"motion", "search", "filter", "highlight", "view", "file", "other"}
-	for _, g := range order {
-		binds := groups[g]
-		if len(binds) == 0 {
+	// Every other mode, straight from its table, so a rebinding shows here.
+	for _, t := range config.Tables {
+		if t.Name == "normal" || t.Name == "visual" {
 			continue
 		}
-		o.rows = append(o.rows, ovRow{text: "", item: -1})
-		o.rows = append(o.rows, ovRow{text: strings.ToUpper(g), style: "overlay.title", item: -1})
-
-		// Collapse keys bound to the same command onto one line.
-		byCmd := map[string][]string{}
-		visualOnly := map[string]bool{}
-		var seen []string
-		for _, b := range binds {
-			if b.Visual {
-				visualOnly[b.Cmd.String()] = true
-			} else {
-				delete(visualOnly, b.Cmd.String())
-			}
-			k := b.Cmd.String()
-			if _, ok := byCmd[k]; !ok {
-				seen = append(seen, k)
-			}
-			byCmd[k] = append(byCmd[k], b.Spec)
-		}
-		for _, cmd := range seen {
-			help := ""
-			name := strings.Fields(cmd)[0]
-			if spec, ok := config.LookupCommand(name); ok {
-				help = spec.Help
-			}
-			if visualOnly[cmd] {
-				help = "(while selecting) " + help
-			}
-			o.rows = append(o.rows, ovRow{
-				text: fmt.Sprintf("  %-16s %-22s %s", strings.Join(byCmd[cmd], " "), cmd, help),
-				item: -1,
-			})
-		}
+		o.helpSection(strings.ToUpper(t.Help), a.cfg.Binds(t.Name))
 	}
 
 	o.rows = append(o.rows,
@@ -377,6 +256,7 @@ func (a *App) showHelp() {
 		ovRow{text: "READING THE KEYS", style: "overlay.title", item: -1},
 		ovRow{text: "  Two letters together are a sequence: gg is g then g.", style: "overlay.dim", item: -1},
 		ovRow{text: "  <C-d> is Control and d.  <M-d> is Alt and d, or Escape then d.", style: "overlay.dim", item: -1},
+		ovRow{text: "  Every key is rebound by name: bind -T <table> <key> <command>.", style: "overlay.dim", item: -1},
 		ovRow{text: "", item: -1},
 		ovRow{text: "COUNTS AND SEQUENCES", style: "overlay.title", item: -1},
 		ovRow{text: "  Type a number before a motion to repeat it: 5j, 12k, 42G.", style: "overlay.dim", item: -1},
@@ -384,9 +264,6 @@ func (a *App) showHelp() {
 		ovRow{text: "", item: -1},
 		ovRow{text: "THE MATCH WINDOW", style: "overlay.title", item: -1},
 		ovRow{text: "  f / ? & ! and m open a window listing what the pattern matches.", style: "overlay.dim", item: -1},
-		ovRow{text: "  Up/Down pick a match, Tab goes to it, Enter applies, Esc cancels.", style: "overlay.dim", item: -1},
-		ovRow{text: "  <C-r> reads the pattern as a regular expression (PCRE) instead.", style: "overlay.dim", item: -1},
-		ovRow{text: "  <C-p> and <C-n> recall patterns typed earlier.", style: "overlay.dim", item: -1},
 		ovRow{text: "  Only f matches loosely; the rest match the text exactly as typed.", style: "overlay.dim", item: -1},
 		ovRow{text: "  f just goes there and leaves nothing behind; / also lights up", style: "overlay.dim", item: -1},
 		ovRow{text: "  every match for n and N, and ? makes them step backwards.", style: "overlay.dim", item: -1},
@@ -412,11 +289,69 @@ func (a *App) showHelp() {
 	a.ov = o
 }
 
+// helpSection lists bindings under a heading, collapsing the keys bound to
+// one command onto one line.
+func (o *overlay) helpSection(title string, binds []config.Bind) {
+	if len(binds) == 0 {
+		return
+	}
+	o.rows = append(o.rows,
+		ovRow{text: "", item: -1},
+		ovRow{text: title, style: "overlay.title", item: -1})
+
+	byCmd := map[string][]string{}
+	visualOnly := map[string]bool{}
+	var seen []string
+	for _, b := range binds {
+		k := b.Cmd.String()
+		if _, ok := byCmd[k]; !ok {
+			seen = append(seen, k)
+			visualOnly[k] = true
+		}
+		visualOnly[k] = visualOnly[k] && b.Table == "visual"
+		byCmd[k] = append(byCmd[k], b.Spec)
+	}
+	for _, cmd := range seen {
+		help := ""
+		if spec, ok := config.LookupCommand(strings.Fields(cmd)[0]); ok {
+			help = spec.Help
+		}
+		if visualOnly[cmd] {
+			help = "(while selecting) " + help
+		}
+		o.rows = append(o.rows, ovRow{
+			text: fmt.Sprintf("  %-16s %-22s %s", strings.Join(byCmd[cmd], " "), cmd, help),
+			item: -1,
+		})
+	}
+}
+
+// panelHint spells out a panel's keys from the table's bindings, so a
+// rebinding shows: each label is followed by the commands it describes.
+func (a *App) panelHint(table string, pairs ...string) string {
+	var parts []string
+	for i := 0; i < len(pairs); {
+		label := pairs[i]
+		i++
+		var keys []string
+		for ; i < len(pairs) && strings.Contains(pairs[i], "-"); i++ {
+			if k := a.cfg.KeysFor(table, pairs[i]); len(k) > 0 {
+				keys = append(keys, k[0])
+			}
+		}
+		if len(keys) > 0 {
+			parts = append(parts, strings.Join(keys, "/")+" "+label)
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
 func (a *App) showRules() {
 	o := &overlay{
 		kind:  ovRules,
 		title: "rules",
-		hint:  "Space on/off  e edit  a action  r recolour  d delete  Esc close",
+		hint: a.panelHint("rules", "on/off", "rules-toggle", "edit", "rules-edit", "action", "rules-cycle-action",
+			"recolour", "rules-recolour", "delete", "rules-delete", "close", "panel-close"),
 	}
 	if a.ov != nil && a.ov.kind == ovRules {
 		o.sel = a.ov.sel

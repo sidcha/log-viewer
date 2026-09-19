@@ -358,43 +358,28 @@ func (a *App) handle(ev tcell.Event) {
 }
 
 func (a *App) key(ev *tcell.EventKey) {
-	if a.confirm != nil {
-		a.confirmKey(ev)
-		return
-	}
-	if a.find != nil {
-		a.finderKey(ev)
-		return
-	}
-	if a.prompt != nil {
-		a.promptKey(ev)
-		return
-	}
-	if a.ov != nil && a.overlayKey(ev) {
-		return
-	}
-	a.dispatch(config.FromEvent(ev))
+	a.dispatch(a.keyTable(), config.FromEvent(ev))
 }
 
-// dispatch feeds one key press into the pending sequence and count.
+// dispatch feeds one key press into the pending sequence and count, and runs
+// whatever the active key table binds it to.
 //
 // Counts come first and are collected until a non-digit arrives, so 5j moves
 // five lines and 42G jumps to line 42. A leading 0 is the motion, not the start
 // of a count, which is why the digit test depends on whether a count is already
-// building.
-func (a *App) dispatch(k config.Key) {
-	if len(a.pending) == 0 && k.Mod == 0 && k.Key == tcell.KeyRune {
+// building. Only the tables for the log itself take counts: in the match
+// window a digit is part of the pattern.
+func (a *App) dispatch(table string, k config.Key) {
+	counts := table == "normal" || table == "visual"
+	if counts && len(a.pending) == 0 && k.Mod == 0 && k.Key == tcell.KeyRune {
 		if d := k.Ch - '0'; d >= 0 && d <= 9 && !(d == 0 && a.count == 0) {
-			a.count = a.count*10 + int64(d)
-			if a.count > maxCount {
-				a.count = maxCount
-			}
+			a.count = min(a.count*10+int64(d), maxCount)
 			return
 		}
 	}
 
 	a.pending = append(a.pending, k)
-	cmd, m := a.lookup(a.pending)
+	cmd, m := a.cfg.LookupIn(table, a.pending)
 	switch m {
 	case config.Partial:
 		return
@@ -403,20 +388,12 @@ func (a *App) dispatch(k config.Key) {
 		a.pending, a.count = a.pending[:0], 0
 		a.exec(cmd, count)
 	default:
+		typed := len(a.pending) == 1 && k.Key == tcell.KeyRune
 		a.pending, a.count = a.pending[:0], 0
-	}
-}
-
-// lookup resolves a sequence against the visual-mode map first when a
-// selection is active, so y can copy the selection while still being the
-// prefix of yy everywhere else.
-func (a *App) lookup(seq []config.Key) (config.Command, config.Match) {
-	if a.visualActive() {
-		if cmd, m := a.cfg.LookupVisual(seq); m != config.NoMatch {
-			return cmd, m
+		if typed {
+			a.selfInsert(k.Ch)
 		}
 	}
-	return a.cfg.Lookup(seq)
 }
 
 // pendingKeys renders the half-typed sequence for the status line, the way vim

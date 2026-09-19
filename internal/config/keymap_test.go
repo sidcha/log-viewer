@@ -77,8 +77,8 @@ func TestSequenceStringRoundTrips(t *testing.T) {
 
 func TestLookupPartialAndFull(t *testing.T) {
 	c := New()
-	c.bindSeq(seq(t, "gg"), "gg", Command{Name: "goto-start"})
-	c.bindSeq(seq(t, "G"), "G", Command{Name: "goto-end"})
+	mustBind(t, c, "normal", seq(t, "gg"), "gg", Command{Name: "goto-start"})
+	mustBind(t, c, "normal", seq(t, "G"), "G", Command{Name: "goto-end"})
 
 	// A lone g is a prefix, not a command: nothing should happen yet.
 	if _, m := c.Lookup(seq(t, "g")); m != Partial {
@@ -103,8 +103,8 @@ func TestLookupPartialAndFull(t *testing.T) {
 // bound and `dd` is too, pressing `d` must act at once.
 func TestShorterBindingWinsImmediately(t *testing.T) {
 	c := New()
-	c.bindSeq(seq(t, "y"), "y", Command{Name: "yank"})
-	c.bindSeq(seq(t, "yy"), "yy", Command{Name: "yank-line"})
+	mustBind(t, c, "normal", seq(t, "y"), "y", Command{Name: "yank"})
+	mustBind(t, c, "normal", seq(t, "yy"), "yy", Command{Name: "yank-line"})
 
 	cmd, m := c.Lookup(seq(t, "y"))
 	if m != Full || cmd.Name != "yank" {
@@ -118,21 +118,21 @@ func TestShorterBindingWinsImmediately(t *testing.T) {
 
 func TestRebindAndUnbind(t *testing.T) {
 	c := New()
-	c.bindSeq(seq(t, "gg"), "gg", Command{Name: "goto-start"})
-	c.bindSeq(seq(t, "gg"), "gg", Command{Name: "goto-end"})
+	mustBind(t, c, "normal", seq(t, "gg"), "gg", Command{Name: "goto-start"})
+	mustBind(t, c, "normal", seq(t, "gg"), "gg", Command{Name: "goto-end"})
 
 	if cmd, _ := c.Lookup(seq(t, "gg")); cmd.Name != "goto-end" {
 		t.Errorf("rebinding did not replace: %v", cmd)
 	}
-	if n := len(c.Binds()); n != 1 {
+	if n := len(c.Binds("normal")); n != 1 {
 		t.Errorf("rebinding duplicated the help entry: %d binds", n)
 	}
 
-	c.unbindSeq(seq(t, "gg"))
+	c.unbind("normal", seq(t, "gg"))
 	if _, m := c.Lookup(seq(t, "gg")); m == Full {
 		t.Error("unbind left the command in place")
 	}
-	if n := len(c.Binds()); n != 0 {
+	if n := len(c.Binds("normal")); n != 0 {
 		t.Errorf("unbind left %d help entries", n)
 	}
 }
@@ -141,10 +141,10 @@ func TestRebindAndUnbind(t *testing.T) {
 // out another that shares its prefix.
 func TestUnbindLeavesSiblings(t *testing.T) {
 	c := New()
-	c.bindSeq(seq(t, "gg"), "gg", Command{Name: "goto-start"})
-	c.bindSeq(seq(t, "ge"), "ge", Command{Name: "goto-end"})
+	mustBind(t, c, "normal", seq(t, "gg"), "gg", Command{Name: "goto-start"})
+	mustBind(t, c, "normal", seq(t, "ge"), "ge", Command{Name: "goto-end"})
 
-	c.unbindSeq(seq(t, "gg"))
+	c.unbind("normal", seq(t, "gg"))
 	if cmd, m := c.Lookup(seq(t, "ge")); m != Full || cmd.Name != "goto-end" {
 		t.Errorf("Lookup(ge) after unbinding gg = (%v, %v)", cmd, m)
 	}
@@ -284,6 +284,88 @@ func TestEveryAliasNamesACommand(t *testing.T) {
 		if _, ok := LookupCommand(name); !ok {
 			t.Errorf("alias %q names %q, which is not a command", alias, name)
 		}
+	}
+}
+
+func mustBind(t *testing.T, c *Config, table string, keys []Key, spec string, cmd Command) {
+	t.Helper()
+	if err := c.bind(table, keys, spec, cmd); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestTablesFallBack: a key a table leaves unbound is looked up where the
+// table builds on, and a table's own binding wins.
+func TestTablesFallBack(t *testing.T) {
+	c := New()
+	mustBind(t, c, "normal", seq(t, "j"), "j", Command{Name: "down"})
+	mustBind(t, c, "normal", seq(t, "yy"), "yy", Command{Name: "yank-line"})
+	mustBind(t, c, "visual", seq(t, "y"), "y", Command{Name: "yank"})
+	mustBind(t, c, "line", seq(t, "<C-a>"), "<C-a>", Command{Name: "edit-start"})
+	mustBind(t, c, "finder", seq(t, "<Up>"), "<Up>", Command{Name: "finder-select-prev"})
+
+	for _, tc := range []struct {
+		table, keys, want string
+	}{
+		{"visual", "j", "down"},
+		{"visual", "y", "yank"},
+		{"normal", "y", ""}, // a prefix of yy there
+		{"finder", "<C-a>", "edit-start"},
+		{"finder", "<Up>", "finder-select-prev"},
+		{"prompt", "<Up>", ""},
+	} {
+		cmd, m := c.LookupIn(tc.table, seq(t, tc.keys))
+		if tc.want == "" {
+			if m == Full {
+				t.Errorf("%s %s = %s, want no command", tc.table, tc.keys, cmd.Name)
+			}
+			continue
+		}
+		if m != Full || cmd.Name != tc.want {
+			t.Errorf("%s %s = %v %v, want %s", tc.table, tc.keys, cmd, m, tc.want)
+		}
+	}
+}
+
+// TestBindChecksTheCommandSuitsTheTable: a finder command bound in normal
+// mode would do nothing, silently.
+func TestBindChecksTheCommandSuitsTheTable(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		ok   bool
+	}{
+		{"bind -T finder <C-t> finder-toggle-regex", true},
+		{"bind -T finder <C-t> edit-start", true},
+		{"bind -T prompt <C-t> edit-start", true},
+		{"bind -T rules z panel-close", true},
+		{"bind -T visual z down", true},
+		{"bind -T overlay z nop", true},
+		{"bind <C-t> finder-toggle-regex", false},
+		{"bind -T prompt <C-t> finder-toggle-regex", false},
+		{"bind -T line z down", false},
+		{"bind -T nowhere z down", false},
+		{"unbind -T nowhere z", false},
+	} {
+		err := New().Parse("t", tc.text)
+		if (err == nil) != tc.ok {
+			t.Errorf("%q: err = %v, want ok=%v", tc.text, err, tc.ok)
+		}
+	}
+}
+
+func TestBindVisualIsATableAlias(t *testing.T) {
+	c := New()
+	if err := c.Parse("t", "bind-visual y yank\n"); err != nil {
+		t.Fatal(err)
+	}
+	if cmd, m := c.LookupIn("visual", seq(t, "y")); m != Full || cmd.Name != "yank" {
+		t.Errorf("bind-visual y = %v %v", cmd, m)
+	}
+	if err := c.Parse("t", "unbind-visual y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, m := c.LookupIn("visual", seq(t, "y")); m != NoMatch {
+		t.Error("unbind-visual left the binding")
 	}
 }
 

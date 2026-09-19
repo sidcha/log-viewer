@@ -380,85 +380,24 @@ func (a *App) moveSel(delta int) {
 
 // ---------------------------------------------------------------------- keys
 
-func (a *App) finderKey(ev *tcell.EventKey) {
+// previewMatch goes to the selected match without giving up the window.
+func (a *App) previewMatch() {
+	if r := a.find.selected(); r != nil {
+		a.gotoSourceLine(r.num)
+	}
+}
+
+// toggleRegex switches between reading the pattern plainly and as PCRE. It
+// has a key of its own, so every printable character stays typable -- * and ?
+// are part of the syntax being toggled into.
+func (a *App) toggleRegex() {
 	f := a.find
-	edited := false
-
-	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyCtrlG:
-		a.closeFinder()
-		return
-
-	case tcell.KeyEnter:
-		a.commitFinder()
-		return
-
-	case tcell.KeyTab:
-		// Look at a match without giving up the window.
-		if r := f.selected(); r != nil {
-			a.gotoSourceLine(r.num)
-		}
-		return
-
-	case tcell.KeyUp:
-		a.moveSel(-1)
-		return
-	case tcell.KeyDown:
-		a.moveSel(1)
-		return
-
-	// The arrows move through the matches, so recalling an earlier pattern
-	// keeps the control keys it has at the bottom-row prompt.
-	case tcell.KeyCtrlP:
-		edited = f.history(-1)
-	case tcell.KeyCtrlN:
-		edited = f.history(1)
-
-	case tcell.KeyPgUp:
-		a.moveSel(-f.height)
-		return
-	case tcell.KeyPgDn:
-		a.moveSel(f.height)
-		return
-
-	case tcell.KeyLeft:
-		f.left()
-	case tcell.KeyRight:
-		f.right()
-	case tcell.KeyHome, tcell.KeyCtrlA:
-		f.home()
-	case tcell.KeyEnd, tcell.KeyCtrlE:
-		f.toEnd()
-
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		edited = f.backspace()
-	case tcell.KeyDelete, tcell.KeyCtrlD:
-		edited = f.del()
-	case tcell.KeyCtrlU:
-		edited = f.clear()
-	case tcell.KeyCtrlK:
-		edited = f.killEnd()
-	case tcell.KeyCtrlW:
-		edited = f.deleteWord()
-
-	case tcell.KeyCtrlR:
-		// Switch between reading the pattern plainly and as PCRE. A dedicated
-		// key, so every printable character stays typable -- * and ? are part
-		// of the syntax being toggled into.
-		if f.mode == filter.Regex {
-			f.mode = defaultMode(f.kind)
-		} else {
-			f.mode = filter.Regex
-		}
-		edited = true
-
-	case tcell.KeyRune:
-		edited = f.insert(ev.Rune())
+	if f.mode == filter.Regex {
+		f.mode = defaultMode(f.kind)
+	} else {
+		f.mode = filter.Regex
 	}
-
-	if edited {
-		a.restartFinder()
-	}
+	a.restartFinder()
 }
 
 // commitFinder applies what the window was opened for.

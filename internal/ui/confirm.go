@@ -2,16 +2,23 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/gdamore/tcell/v2"
 )
 
-// choice is one answer to a confirmation.
+// choice is one answer to a confirmation. answer is the command that gives
+// it, so the key is whatever the confirm table binds to that command.
 type choice struct {
-	key   rune
-	label string
-	run   func()
+	answer string
+	label  string
+	run    func()
 }
+
+// The answers a question can offer.
+const (
+	answerYes    = "confirm-yes"
+	answerNo     = "confirm-no"
+	answerOther  = "confirm-other"
+	answerCancel = "confirm-cancel"
+)
 
 // confirm is a single-key question on the status row.
 //
@@ -24,8 +31,8 @@ type confirm struct {
 	cancel  func()
 }
 
-// ask puts a question up. Escape and C-g always cancel, whether or not a cancel
-// choice is listed.
+// ask puts a question up. confirm-cancel always cancels, whether or not a
+// cancel choice is listed.
 func (a *App) ask(text string, cancel func(), choices ...choice) {
 	a.clearMsg()
 	a.confirm = &confirm{text: text, choices: choices, cancel: cancel}
@@ -33,43 +40,35 @@ func (a *App) ask(text string, cancel func(), choices ...choice) {
 
 func (a *App) closeConfirm() { a.confirm = nil }
 
-// confirmKey handles a key while a question is up, reporting whether it was
-// consumed. Anything unrecognised is swallowed rather than acted on, so a
-// stray keystroke cannot answer a question about discarding work.
-func (a *App) confirmKey(ev *tcell.EventKey) bool {
+// answer settles the question with the choice given by an answer command.
+// Cancelling always works, whether or not a cancel choice is listed; any
+// other answer the question does not offer is ignored, so a stray keystroke
+// cannot settle a question about discarding work.
+func (a *App) answer(answer string) {
 	c := a.confirm
-
-	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyCtrlG:
+	for _, ch := range c.choices {
+		if ch.answer == answer {
+			a.closeConfirm()
+			if ch.run != nil {
+				ch.run()
+			}
+			return
+		}
+	}
+	if answer == answerCancel {
 		a.closeConfirm()
 		if c.cancel != nil {
 			c.cancel()
 		}
-		return true
-	case tcell.KeyRune:
-		for _, ch := range c.choices {
-			if matchesChoice(ev.Rune(), ch.key) {
-				a.closeConfirm()
-				if ch.run != nil {
-					ch.run()
-				}
-				return true
-			}
-		}
 	}
-	return true
 }
 
-// matchesChoice accepts either case, so a caps-lock accident still answers.
-func matchesChoice(got, want rune) bool {
-	return got == want || lowerRune(got) == lowerRune(want)
-}
-
-func lowerRune(r rune) rune {
-	if r >= 'A' && r <= 'Z' {
-		return r + 32
+// answerKey is the key shown for a choice: the first one bound to it.
+func (a *App) answerKey(answer string) string {
+	if keys := a.cfg.KeysFor("confirm", answer); len(keys) > 0 {
+		return keys[0]
 	}
-	return r
+	return "?"
 }
 
 func (a *App) drawConfirm(row, w int) {
@@ -79,7 +78,7 @@ func (a *App) drawConfirm(row, w int) {
 	var answers strings.Builder
 	for _, ch := range c.choices {
 		answers.WriteString("   (")
-		answers.WriteRune(ch.key)
+		answers.WriteString(a.answerKey(ch.answer))
 		answers.WriteString(") ")
 		answers.WriteString(ch.label)
 	}

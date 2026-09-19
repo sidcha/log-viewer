@@ -358,4 +358,7 @@ func init() {
 			a.openPrompt(pSave, "save to: ", &a.histPath)
 		},
 	}
+	for name, h := range modeHandlers() {
+		handlers[name] = h
+	}
 }

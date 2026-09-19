@@ -113,7 +113,71 @@ var Specs = []Spec{
 	{"cancel", "other", 0, 0, "leave visual mode, close an overlay, or cancel an operation"},
 	{"quit", "other", 0, 0, "exit, offering to save the rules first"},
 	{"quit-force", "other", 0, 0, "exit without asking about the rules"},
-	{"nop", "other", 0, 0, "do nothing"},
+	{"nop", "other", 0, 0, "do nothing; bound to a key, it takes that key away"},
+
+	{"edit-left", "edit", 0, 0, "cursor left"},
+	{"edit-right", "edit", 0, 0, "cursor right"},
+	{"edit-start", "edit", 0, 0, "cursor to the start of the line"},
+	{"edit-end", "edit", 0, 0, "cursor to the end of the line"},
+	{"edit-backspace", "edit", 0, 0, "delete the character before the cursor"},
+	{"edit-delete", "edit", 0, 0, "delete the character under the cursor"},
+	{"edit-clear", "edit", 0, 0, "delete the whole line"},
+	{"edit-kill-end", "edit", 0, 0, "delete from the cursor to the end"},
+	{"edit-delete-word", "edit", 0, 0, "delete the word before the cursor"},
+	{"history-prev", "edit", 0, 0, "recall the previous entry"},
+	{"history-next", "edit", 0, 0, "recall the next entry"},
+	{"edit-accept", "edit", 0, 0, "accept what was typed"},
+	{"edit-cancel", "edit", 0, 0, "close without doing anything"},
+
+	{"prompt-complete", "prompt", 0, 0, "complete a command name, cycling on repeat"},
+
+	{"finder-select-prev", "finder", 0, 1, "select the previous match"},
+	{"finder-select-next", "finder", 0, 1, "select the next match"},
+	{"finder-page-up", "finder", 0, 0, "select a window's height up"},
+	{"finder-page-down", "finder", 0, 0, "select a window's height down"},
+	{"finder-preview", "finder", 0, 0, "go to the selected match, keeping the window open"},
+	{"finder-toggle-regex", "finder", 0, 0, "read the pattern as PCRE, and back"},
+
+	{"panel-close", "panel", 0, 0, "close the panel"},
+	{"panel-up", "panel", 0, 1, "move up a line"},
+	{"panel-down", "panel", 0, 1, "move down a line"},
+	{"panel-page-up", "panel", 0, 0, "page up"},
+	{"panel-page-down", "panel", 0, 0, "page down"},
+	{"panel-top", "panel", 0, 0, "go to the top"},
+	{"panel-bottom", "panel", 0, 0, "go to the bottom"},
+
+	{"rules-toggle", "rules", 0, 0, "enable or disable the rule"},
+	{"rules-delete", "rules", 0, 0, "delete the rule"},
+	{"rules-edit", "rules", 0, 0, "edit the rule's pattern in the match window"},
+	{"rules-cycle-action", "rules", 0, 0, "cycle the rule between only, never and highlight"},
+	{"rules-recolour", "rules", 0, 0, "give the rule a different colour"},
+	{"rules-enable-all", "rules", 0, 0, "enable every rule"},
+	{"rules-disable-all", "rules", 0, 0, "disable every rule"},
+
+	{"confirm-yes", "confirm", 0, 0, "answer yes"},
+	{"confirm-no", "confirm", 0, 0, "answer no"},
+	{"confirm-other", "confirm", 0, 0, "take the third answer, when there is one"},
+	{"confirm-cancel", "confirm", 0, 0, "cancel the question"},
+}
+
+// groupContext says which kind of key table a command group belongs to.
+// Everything not listed acts on the log view.
+var groupContext = map[string]string{
+	"edit":    "line",
+	"prompt":  "prompt",
+	"finder":  "finder",
+	"panel":   "panel",
+	"rules":   "rules",
+	"confirm": "confirm",
+}
+
+// Context is the kind of key table the command can be bound in: "view" for
+// the log itself, or the mode it acts on.
+func (s *Spec) Context() string {
+	if c, ok := groupContext[s.Group]; ok {
+		return c
+	}
+	return "view"
 }
 
 // Aliases maps the short names vim users reach for onto lv's commands.
