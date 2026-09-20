@@ -560,25 +560,45 @@ func keyTableFlag(w []string) (string, []string) {
 	return "normal", w
 }
 
-func (c *Config) block(head stmt, body []stmt) error {
-	// A background block holds the parts of a theme that only make sense
-	// against a dark or a light terminal.
-	if head.Words[0] == "background" {
-		if len(head.Words) != 2 {
-			return head.errf("usage: background <dark|light> { ... }")
-		}
-		switch head.Words[1] {
-		case "dark", "light":
-		default:
-			return head.errf("background takes dark or light, not %q", head.Words[1])
-		}
-		if head.Words[1] != c.background {
-			return nil // a theme for the other kind of terminal
-		}
-		return c.exec(body)
-	}
+// blockHandlers runs each kind of `name ... { }` block. It is filled in init
+// because a background block's body is run back through block.
+var blockHandlers map[string]func(c *Config, head stmt, body []stmt) error
 
-	if head.Words[0] != "profile" || len(head.Words) != 2 {
+func init() {
+	blockHandlers = map[string]func(c *Config, head stmt, body []stmt) error{
+		"background": (*Config).backgroundBlock,
+		"profile":    (*Config).profileBlock,
+	}
+}
+
+func (c *Config) block(head stmt, body []stmt) error {
+	run, ok := blockHandlers[head.Words[0]]
+	if !ok {
+		return head.errf("unknown block %q", head.Words[0])
+	}
+	return run(c, head, body)
+}
+
+// backgroundBlock holds the parts of a theme that only make sense against a
+// dark or a light terminal.
+func (c *Config) backgroundBlock(head stmt, body []stmt) error {
+	if len(head.Words) != 2 {
+		return head.errf("usage: background <dark|light> { ... }")
+	}
+	switch head.Words[1] {
+	case "dark", "light":
+	default:
+		return head.errf("background takes dark or light, not %q", head.Words[1])
+	}
+	if head.Words[1] != c.background {
+		return nil // a theme for the other kind of terminal
+	}
+	return c.exec(body)
+}
+
+// profileBlock declares or extends a syntax profile.
+func (c *Config) profileBlock(head stmt, body []stmt) error {
+	if len(head.Words) != 2 {
 		return head.errf("usage: profile <name> { ... }")
 	}
 	name := head.Words[1]

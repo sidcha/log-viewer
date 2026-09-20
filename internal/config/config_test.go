@@ -492,3 +492,10 @@ func command(c *Config, k Key) (Command, bool) {
 	cmd, m := c.Lookup([]Key{k})
 	return cmd, m == Full
 }
+
+func TestUnknownBlockNamesItself(t *testing.T) {
+	err := New().Parse("t", "theme dark {\n}\n")
+	if err == nil || !strings.Contains(err.Error(), `unknown block "theme"`) {
+		t.Errorf("err = %v", err)
+	}
+}
