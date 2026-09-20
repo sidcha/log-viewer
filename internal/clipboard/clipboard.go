@@ -17,14 +17,15 @@ import (
 // over ssh or inside a container: there is no X display or Wayland socket to
 // reach, but the terminal on the far end of the connection has a clipboard.
 //
-// command, when set, replaces that with an external program such as wl-copy or
-// pbcopy, for terminals that do not implement OSC 52 or have it turned off.
+// command, when given, replaces that with an external program such as wl-copy
+// or pbcopy, for terminals that do not implement OSC 52 or have it turned off.
+// It is the program and its arguments, already split.
 //
 // Terminals impose their own limits on OSC 52 payloads and mostly fail
 // silently past them, which would look like a yank that did nothing, so text
 // longer than maxOSC52 bytes is refused with a pointer to the command instead.
-func Copy(text, command string, maxOSC52 int) error {
-	if command != "" {
+func Copy(text string, command []string, maxOSC52 int) error {
+	if len(command) > 0 {
 		return runCommand(text, command)
 	}
 	if len(text) > maxOSC52 {
@@ -33,11 +34,7 @@ func Copy(text, command string, maxOSC52 int) error {
 	return writeOSC52(text)
 }
 
-func runCommand(text, command string) error {
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty clipboard-command")
-	}
+func runCommand(text string, parts []string) error {
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Stdin = strings.NewReader(text)
 	if out, err := cmd.CombinedOutput(); err != nil {

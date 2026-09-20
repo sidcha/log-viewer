@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/sidcha/log-viewer/internal/clipboard"
+	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/view"
 )
 
@@ -136,7 +137,12 @@ func (a *App) yank(count int64) {
 	}
 
 	text := b.String()
-	if err := clipboard.Copy(text, a.opts().ClipboardCommand, a.opts().OSC52MaxBytes); err != nil {
+	command, err := config.ParseLine(a.opts().ClipboardCommand)
+	if err != nil {
+		a.errorf("clipboard-command: %v", err)
+		return
+	}
+	if err := clipboard.Copy(text, command, a.opts().OSC52MaxBytes); err != nil {
 		a.errorf("clipboard: %v", err)
 		return
 	}

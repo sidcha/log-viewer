@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/sidcha/log-viewer/internal/config"
 )
@@ -159,8 +158,14 @@ func editConfig(level config.Level) int {
 		return 1
 	}
 
-	// The file need not exist yet; the editor will create it.
-	parts := strings.Fields(editor)
+	// $EDITOR is split the way a config file line is, so a quoted path with a
+	// space in it stays one word. The file need not exist yet; the editor will
+	// create it.
+	parts, err := config.ParseLine(editor)
+	if err != nil || len(parts) == 0 {
+		fmt.Fprintf(os.Stderr, "lv: $EDITOR %q: %v\n", editor, err)
+		return 1
+	}
 	parts = append(parts, path)
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
