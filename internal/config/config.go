@@ -632,7 +632,7 @@ func (c *Config) profileBlock(head stmt, body []stmt) error {
 			if err != nil {
 				return st.errf("%v", err)
 			}
-			p.Detect = re
+			p.Detects = append(p.Detects, re)
 
 		case "clear":
 			p.Items = nil
@@ -888,8 +888,8 @@ func (c *Config) Dump() string {
 		if len(p.Globs) > 0 {
 			fmt.Fprintf(&b, "    match %s\n", strings.Join(p.Globs, " "))
 		}
-		if p.Detect != nil {
-			fmt.Fprintf(&b, "    detect %s\n", quoteWord(p.Detect.String()))
+		for _, re := range p.Detects {
+			fmt.Fprintf(&b, "    detect %s\n", quoteWord(re.String()))
 		}
 		dumpItems(&b, p.Items)
 		b.WriteString("}\n")

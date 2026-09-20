@@ -1,0 +1,3 @@
+[    3.141592] EXT4-fs (vda1): mounted filesystem with ordered data mode
+[    3.200000] systemd[1]: Detected virtualization kvm.
+[    3.300000] random: crng init done

@@ -33,9 +33,11 @@ type Rule struct {
 
 // Profile is a named set of syntax rules for one family of log file.
 type Profile struct {
-	Name   string
-	Globs  []string
-	Detect *regexp.Regexp
+	Name  string
+	Globs []string
+	// Detects are matched against each sampled line; the share of lines any
+	// of them matches is the profile's score.
+	Detects []*regexp.Regexp
 	// Items is the profile as written; Rules is what it means, every use
 	// replaced by the rules of its token set. Expand fills Rules in.
 	Items []Item
@@ -186,39 +188,17 @@ func (e *Engine) addRule(line []byte, r *Rule) {
 	}
 }
 
-// Select picks the profile for a file: an explicit name wins, then a filename
-// glob, then a content sniff against the head of the file, then "generic".
+// Select picks the profile for a file: an explicit name wins; otherwise the
+// head of the file is scored, and "generic" is the answer when nothing fits.
 func Select(profiles []*Profile, name, path string, head []byte) *Profile {
 	if name != "" {
-		for _, p := range profiles {
-			if p.Name == name {
-				return p
-			}
-		}
-		return nil
+		return Find(profiles, name)
 	}
-
-	base := filepath.Base(path)
-	for _, p := range profiles {
-		for _, g := range p.Globs {
-			if ok, err := filepath.Match(g, base); err == nil && ok {
-				return p
-			}
-		}
+	sample := headSample(head, DefaultDetectLines)
+	if p, _ := Score(profiles, sample, filepath.Base(path), DefaultDetectThreshold); p != nil {
+		return p
 	}
-
-	for _, p := range profiles {
-		if p.Detect != nil && p.Detect.Match(head) {
-			return p
-		}
-	}
-
-	for _, p := range profiles {
-		if p.Name == "generic" {
-			return p
-		}
-	}
-	return nil
+	return Find(profiles, "generic")
 }
 
 // Names lists the available profile names, for the help screen and for

@@ -1,0 +1,5 @@
+[    0.000000] Linux version 6.6.0 (builder@host) (gcc 13.2.0) #1 SMP
+[    0.000000] Command line: BOOT_IMAGE=/vmlinuz root=/dev/vda1
+[    0.004211] ACPI: RSDP 0x00000000000F5A40 000014 (v00 BOCHS )
+[    0.105332] pci 0000:00:1f.2: [8086:2922] type 00 class 0x010601
+[    1.203311] usb 1-1: new high-speed USB device number 2 using ehci-pci
