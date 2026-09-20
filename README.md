@@ -450,6 +450,24 @@ application logs), `json` line-delimited records, and a `generic` fallback. The
 profile is chosen by filename glob, then by sniffing the head of the file;
 `-p NAME` forces one and `-p none` turns it off.
 
+Every profile starts from `tokens common`, the tokens nearly every log shares:
+timestamps, numbers with their units, IP and MAC addresses, UUIDs, paths and
+URLs, `key=value`, quoted strings and stack-trace frames. `generic` is that set
+and nothing else. Level words are coloured only where they cannot be prose — in
+capitals (`ERROR`), or delimited (`[err]`, `<wrn>`, `level=warn`) — so a
+message that mentions an error is not painted as one. A `tokens` block of your
+own, used with `use`, shares rules between your profiles the same way:
+
+```conf
+tokens mine {
+    rule 'req-[0-9a-f]+' syntax.uuid
+}
+profile myapp {
+    use common
+    use mine
+}
+```
+
 ### Logs that bring their own colours
 
 A log captured from a serial console, a build, or anything else that writes to
