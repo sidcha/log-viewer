@@ -151,9 +151,13 @@ type Config struct {
 	orders   map[string][]Bind
 	styles   map[string]tcell.Style
 	profiles []*highlight.Profile
-	presets  []Preset
-	loaded   []string
-	sourced  map[string]bool
+	// tokens holds named rule sets that profiles pull in with `use`, and
+	// tokenOrder keeps their declaration order for Dump.
+	tokens     map[string]*highlight.TokenSet
+	tokenOrder []string
+	presets    []Preset
+	loaded     []string
+	sourced    map[string]bool
 	// background is the resolved terminal background, selecting which
 	// `background dark { }` blocks apply.
 	background string
@@ -182,6 +186,7 @@ func New() *Config {
 		tables:       make(map[string]*keyNode),
 		orders:       make(map[string][]Bind),
 		styles:       make(map[string]tcell.Style),
+		tokens:       make(map[string]*highlight.TokenSet),
 		sourced:      make(map[string]bool),
 		parsed:       make(map[string][]stmt),
 		origins:      make(map[string]string),
@@ -568,6 +573,7 @@ func init() {
 	blockHandlers = map[string]func(c *Config, head stmt, body []stmt) error{
 		"background": (*Config).backgroundBlock,
 		"profile":    (*Config).profileBlock,
+		"tokens":     (*Config).tokensBlock,
 	}
 }
 
@@ -629,34 +635,90 @@ func (c *Config) profileBlock(head stmt, body []stmt) error {
 			p.Detect = re
 
 		case "clear":
-			p.Rules = nil
+			p.Items = nil
 
 		case "rule":
-			if len(w) < 3 {
-				return st.errf("usage: rule <regex> <style> [group=N]")
-			}
-			re, err := regexp.Compile(w[1])
+			it, err := ruleItem(st)
 			if err != nil {
-				return st.errf("%v", err)
+				return err
 			}
-			r := highlight.Rule{Re: re, StyleName: w[2]}
-			for _, extra := range w[3:] {
-				k, v, ok := strings.Cut(extra, "=")
-				if !ok || k != "group" {
-					return st.errf("unknown rule option %q", extra)
-				}
-				n, err := strconv.Atoi(v)
-				if err != nil || n < 0 {
-					return st.errf("bad group %q", v)
-				}
-				r.Group = n
+			p.Items = append(p.Items, it)
+
+		case "use":
+			it, err := useItem(st)
+			if err != nil {
+				return err
 			}
-			p.Rules = append(p.Rules, r)
+			p.Items = append(p.Items, it)
 
 		default:
 			return st.errf("unknown profile directive %q", w[0])
 		}
 	}
+	return nil
+}
+
+// ruleItem parses a `rule <regex> <style> [group=N]` line of a profile or
+// token set.
+func ruleItem(st stmt) (highlight.Item, error) {
+	w := st.Words
+	if len(w) < 3 {
+		return highlight.Item{}, st.errf("usage: rule <regex> <style> [group=N]")
+	}
+	re, err := regexp.Compile(w[1])
+	if err != nil {
+		return highlight.Item{}, st.errf("%v", err)
+	}
+	r := highlight.Rule{Re: re, StyleName: w[2]}
+	for _, extra := range w[3:] {
+		k, v, ok := strings.Cut(extra, "=")
+		if !ok || k != "group" {
+			return highlight.Item{}, st.errf("unknown rule option %q", extra)
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return highlight.Item{}, st.errf("bad group %q", v)
+		}
+		r.Group = n
+	}
+	return highlight.Item{Rule: r}, nil
+}
+
+// useItem parses a `use <tokens>` line.
+func useItem(st stmt) (highlight.Item, error) {
+	if len(st.Words) != 2 {
+		return highlight.Item{}, st.errf("usage: use <tokens>")
+	}
+	return highlight.Item{Use: st.Words[1], Where: fmt.Sprintf("%s:%d", st.File, st.Line)}, nil
+}
+
+// tokensBlock declares a token set, replacing any earlier one of that name.
+func (c *Config) tokensBlock(head stmt, body []stmt) error {
+	if len(head.Words) != 2 {
+		return head.errf("usage: tokens <name> { ... }")
+	}
+	name := head.Words[1]
+	set := &highlight.TokenSet{Name: name}
+	for _, st := range body {
+		var it highlight.Item
+		var err error
+		switch st.Words[0] {
+		case "rule":
+			it, err = ruleItem(st)
+		case "use":
+			it, err = useItem(st)
+		default:
+			return st.errf("tokens take rule and use lines, not %q", st.Words[0])
+		}
+		if err != nil {
+			return err
+		}
+		set.Items = append(set.Items, it)
+	}
+	if _, ok := c.tokens[name]; !ok {
+		c.tokenOrder = append(c.tokenOrder, name)
+	}
+	c.tokens[name] = set
 	return nil
 }
 
@@ -672,6 +734,12 @@ func (c *Config) findProfile(name string) *highlight.Profile {
 // Resolve binds style names to styles after all files have been read, so a user
 // file can redefine a style the built-in profiles reference.
 func (c *Config) Resolve() error {
+	for _, p := range c.profiles {
+		if err := highlight.Expand(p, c.tokens); err != nil {
+			return err
+		}
+	}
+
 	var missing []string
 	for _, p := range c.profiles {
 		for i := range p.Rules {
@@ -809,6 +877,12 @@ func (c *Config) Dump() string {
 		}
 	}
 
+	for _, name := range c.tokenOrder {
+		fmt.Fprintf(&b, "\ntokens %s {\n", name)
+		dumpItems(&b, c.tokens[name].Items)
+		b.WriteString("}\n")
+	}
+
 	for _, p := range c.profiles {
 		fmt.Fprintf(&b, "\nprofile %s {\n", p.Name)
 		if len(p.Globs) > 0 {
@@ -817,16 +891,25 @@ func (c *Config) Dump() string {
 		if p.Detect != nil {
 			fmt.Fprintf(&b, "    detect %s\n", quoteWord(p.Detect.String()))
 		}
-		for _, r := range p.Rules {
-			fmt.Fprintf(&b, "    rule %s %s", quoteWord(r.Re.String()), r.StyleName)
-			if r.Group > 0 {
-				fmt.Fprintf(&b, " group=%d", r.Group)
-			}
-			b.WriteByte('\n')
-		}
+		dumpItems(&b, p.Items)
 		b.WriteString("}\n")
 	}
 	return b.String()
+}
+
+func dumpItems(b *strings.Builder, items []highlight.Item) {
+	for _, it := range items {
+		if it.Use != "" {
+			fmt.Fprintf(b, "    use %s\n", it.Use)
+			continue
+		}
+		r := it.Rule
+		fmt.Fprintf(b, "    rule %s %s", quoteWord(r.Re.String()), r.StyleName)
+		if r.Group > 0 {
+			fmt.Fprintf(b, " group=%d", r.Group)
+		}
+		b.WriteByte('\n')
+	}
 }
 
 // quoteWord renders a word so that tokenize reads it back unchanged.

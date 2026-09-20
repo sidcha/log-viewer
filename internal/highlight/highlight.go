@@ -36,7 +36,25 @@ type Profile struct {
 	Name   string
 	Globs  []string
 	Detect *regexp.Regexp
-	Rules  []Rule
+	// Items is the profile as written; Rules is what it means, every use
+	// replaced by the rules of its token set. Expand fills Rules in.
+	Items []Item
+	Rules []Rule
+}
+
+// Item is one line of a profile or token set as written: a rule, or the
+// name of a token set to insert in its place.
+type Item struct {
+	Rule  Rule
+	Use   string
+	Where string // file:line of a use, for errors
+}
+
+// TokenSet is a named list of rules that profiles pull in with `use`, so
+// the tokens every log shares are written once.
+type TokenSet struct {
+	Name  string
+	Items []Item
 }
 
 // Mark is a pattern whose matches are painted wherever they appear, carrying

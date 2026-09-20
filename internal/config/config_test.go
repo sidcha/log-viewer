@@ -499,3 +499,92 @@ func TestUnknownBlockNamesItself(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func parseResolved(t *testing.T, src string) *Config {
+	t.Helper()
+	c := New()
+	if err := c.Parse("<test>", src); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestTokensAreSharedByTheProfilesThatUseThem(t *testing.T) {
+	c := parseResolved(t, `
+style s fg=#010203
+profile a {
+    use nums
+    rule 'x' s
+}
+tokens nums {
+    rule '[0-9]+' s
+}
+`)
+	p := c.findProfile("a")
+	if len(p.Rules) != 2 || p.Rules[0].Re.String() != "[0-9]+" || p.Rules[1].Re.String() != "x" {
+		t.Fatalf("profile a has %d rules, want the set's then its own", len(p.Rules))
+	}
+	if p.Rules[0].Style != c.Style("s") {
+		t.Error("a rule taken from a token set did not get its style bound")
+	}
+}
+
+func TestRedefiningTokensReplacesThem(t *testing.T) {
+	c := parseResolved(t, `
+style s fg=#010203
+tokens nums {
+    rule '[0-9]+' s
+}
+tokens nums {
+    rule 'N' s
+}
+profile a {
+    use nums
+}
+`)
+	if p := c.findProfile("a"); len(p.Rules) != 1 || p.Rules[0].Re.String() != "N" {
+		t.Errorf("profile a kept the first definition of nums")
+	}
+}
+
+func TestUseOfUndefinedTokensFailsTheLoad(t *testing.T) {
+	c := New()
+	if err := c.Parse("<test>", "profile a {\n    use nope\n}\n"); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Resolve()
+	if err == nil || !strings.Contains(err.Error(), "<test>:2") {
+		t.Errorf("err = %v, want an error naming <test>:2", err)
+	}
+}
+
+func TestTokensTakeOnlyRulesAndUses(t *testing.T) {
+	c := New()
+	err := c.Parse("<test>", "tokens t {\n    detect 'x'\n}\n")
+	if err == nil || !strings.Contains(err.Error(), "detect") {
+		t.Errorf("err = %v, want detect rejected inside tokens", err)
+	}
+}
+
+func TestDumpKeepsTokensAndUses(t *testing.T) {
+	c := parseResolved(t, `
+style s fg=#010203
+tokens nums {
+    rule '[0-9]+' s
+}
+profile a {
+    use nums
+}
+`)
+	d := c.Dump()
+	if !strings.Contains(d, "tokens nums {") || !strings.Contains(d, "    use nums\n") {
+		t.Errorf("dump lost the tokens block or the use line:\n%s", d)
+	}
+	c2 := parseResolved(t, d)
+	if p := c2.findProfile("a"); len(p.Rules) != 1 {
+		t.Errorf("dump did not round-trip: profile a has %d rules", len(p.Rules))
+	}
+}
