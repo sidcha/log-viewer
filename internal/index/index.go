@@ -115,6 +115,13 @@ func (x *Index) Lines() int64 {
 	return n
 }
 
+// Complete is the number of newline-terminated lines indexed.
+func (x *Index) Complete() int64 {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return x.complete
+}
+
 // Stats reports indexing progress: lines found, bytes consumed and file size.
 func (x *Index) Stats() (lines, scanned, size int64, stride int64, checkpoints int) {
 	x.mu.RLock()

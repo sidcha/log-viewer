@@ -27,6 +27,24 @@ type Options struct {
 	Advise string
 	// Notify is called after every published batch. It must not block.
 	Notify func()
+	// Observer, when set, is shown every complete line as it is indexed.
+	Observer Observer
+}
+
+// Observer sees each newline-terminated line as the indexer consumes it, in
+// file order and once, so work that needs every line rides on the pass the
+// index makes anyway. It runs on the indexer's goroutine: it must be quick,
+// and must not keep text after it returns.
+type Observer interface {
+	// ObserveLine is line n, starting at byte off.
+	ObserveLine(n, off int64, text []byte)
+	// ObserveCaughtUp is called when every available byte has been
+	// indexed. streaming reports whether the source is still being fed by
+	// a pipe, so more is known to be coming. It may be called repeatedly.
+	ObserveCaughtUp(streaming bool)
+	// ObserveReset is called when the file was truncated or replaced and
+	// indexing starts over from line 0.
+	ObserveReset()
 }
 
 // Indexer keeps an Index current with a file that may still be growing.
@@ -81,11 +99,17 @@ func (ix *Indexer) Sync(ctx context.Context) {
 		if change == source.Reset {
 			ix.idx.Reset()
 			ix.sc = nil
+			if ix.opt.Observer != nil {
+				ix.opt.Observer.ObserveReset()
+			}
 		}
 
 		size := ix.src.Size()
 		ix.idx.SetSize(size)
 		if ix.idx.Tail() >= size {
+			if ix.opt.Observer != nil {
+				ix.opt.Observer.ObserveCaughtUp(ix.src.Streaming())
+			}
 			return
 		}
 		ix.consume(ctx, size)
@@ -149,6 +173,7 @@ func (ix *Indexer) consume(ctx context.Context, size int64) {
 	ix.sc.SetLimit(size)
 	ix.sc.SeekTo(tail)
 
+	n := ix.idx.Complete()
 	starts := ix.buf[:0]
 	for ix.sc.Scan() {
 		if !ix.sc.Terminated() {
@@ -156,6 +181,10 @@ func (ix *Indexer) consume(ctx context.Context, size int64) {
 			// keep growing, until its newline arrives.
 			break
 		}
+		if ix.opt.Observer != nil {
+			ix.opt.Observer.ObserveLine(n, ix.sc.Offset(), ix.sc.Bytes())
+		}
+		n++
 		starts = append(starts, ix.sc.Offset())
 		tail = ix.sc.Next()
 
@@ -177,5 +206,11 @@ func (ix *Indexer) consume(ctx context.Context, size int64) {
 
 	if err := ix.sc.Err(); err != nil {
 		ix.idx.SetErr(err)
+	}
+
+	// Every complete line available has been seen, even if a partial one
+	// is still waiting for its newline.
+	if ctx.Err() == nil && ix.opt.Observer != nil {
+		ix.opt.Observer.ObserveCaughtUp(ix.src.Streaming())
 	}
 }

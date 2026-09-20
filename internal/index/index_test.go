@@ -251,3 +251,71 @@ func TestRunFollowsOnWakeChannel(t *testing.T) {
 		}
 	}
 }
+
+type seenLine struct {
+	n, off int64
+	text   string
+}
+
+type recorder struct {
+	lines  []seenLine
+	caught []bool
+	resets int
+}
+
+func (r *recorder) ObserveLine(n, off int64, text []byte) {
+	r.lines = append(r.lines, seenLine{n, off, string(text)})
+}
+func (r *recorder) ObserveCaughtUp(streaming bool) { r.caught = append(r.caught, streaming) }
+func (r *recorder) ObserveReset()                  { r.resets++ }
+
+func TestObserverSeesEachCompleteLineOnce(t *testing.T) {
+	path := writeFile(t, "o.log", "one\ntwo\nthr")
+	src := openSrc(t, path)
+	rec := &recorder{}
+	idx := New(0, 0)
+	ix := NewIndexer(src, idx, Options{Block: 4, Observer: rec})
+	ix.Sync(context.Background())
+
+	want := []seenLine{{0, 0, "one"}, {1, 4, "two"}}
+	if fmt.Sprint(rec.lines) != fmt.Sprint(want) {
+		t.Fatalf("lines = %v, want %v (the partial line must wait)", rec.lines, want)
+	}
+	if len(rec.caught) == 0 || rec.caught[len(rec.caught)-1] {
+		t.Errorf("caught-up calls = %v, want a final one reporting a file that is not streaming", rec.caught)
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("ee\nfour\n")
+	f.Close()
+	ix.Sync(context.Background())
+
+	want = append(want, seenLine{2, 8, "three"}, seenLine{3, 14, "four"})
+	if fmt.Sprint(rec.lines) != fmt.Sprint(want) {
+		t.Errorf("lines = %v, want %v", rec.lines, want)
+	}
+}
+
+// A truncated file starts the observer over.
+func TestObserverHearsAboutAReset(t *testing.T) {
+	path := writeFile(t, "r.log", "aaaa\nbbbb\n")
+	src := openSrc(t, path)
+	rec := &recorder{}
+	ix := NewIndexer(src, New(0, 0), Options{Observer: rec})
+	ix.Sync(context.Background())
+
+	if err := os.WriteFile(path, []byte("c\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ix.Sync(context.Background())
+
+	if rec.resets != 1 {
+		t.Fatalf("resets = %d, want 1", rec.resets)
+	}
+	if last := rec.lines[len(rec.lines)-1]; last != (seenLine{0, 0, "c"}) {
+		t.Errorf("after the reset the first line was %v, want line 0 at 0", last)
+	}
+}
