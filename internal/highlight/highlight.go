@@ -69,8 +69,8 @@ type Mark struct {
 // Engine computes spans for a line. It is not safe for concurrent use; the UI
 // owns one and reuses its scratch buffers across every line of every frame.
 type Engine struct {
-	Profile *Profile
-	Marks   []Mark
+	Profiles Profiler
+	Marks    []Mark
 
 	// MaxScan bounds how many bytes of a line are examined. A single 10 MB JSON
 	// record must not be allowed to stall a frame; the rest renders unstyled.
@@ -85,6 +85,7 @@ type Engine struct {
 	// every visible line, and running every profile rule over each of them
 	// again when nothing moved is most of what a frame costs.
 	cache map[LineKey][]Span
+	seen  uint64 // Profiles.Version() the cache holds answers for
 }
 
 // LineKey names a line's bytes: where it starts, how long it was when read,
@@ -111,7 +112,7 @@ func NewEngine(maxScan, maxMatches int) *Engine {
 	return &Engine{MaxScan: maxScan, MaxMatches: maxMatches}
 }
 
-// SyntaxSpans returns what the profile makes of the line. The result is valid
+// SyntaxSpans returns what profile p makes of the line. The result is valid
 // until the next call to either span method.
 //
 // It is separate from the marks because anything the line itself carries --
@@ -119,13 +120,13 @@ func NewEngine(maxScan, maxMatches int) *Engine {
 // between the two: lv's guess at the shape of the line should not overpaint
 // what the producer actually said, and neither should overpaint the patterns
 // the user is hunting for.
-func (e *Engine) SyntaxSpans(line []byte) []Span {
+func (e *Engine) SyntaxSpans(p *Profile, line []byte) []Span {
 	line = e.bound(line)
 	e.spans = e.spans[:0]
 
-	if e.Profile != nil {
-		for i := range e.Profile.Rules {
-			e.addRule(line, &e.Profile.Rules[i])
+	if p != nil {
+		for i := range p.Rules {
+			e.addRule(line, &p.Rules[i])
 		}
 	}
 	return e.spans
@@ -133,12 +134,19 @@ func (e *Engine) SyntaxSpans(line []byte) []Span {
 
 // SyntaxSpansAt is SyntaxSpans for a line with a stable identity, reusing
 // the answer from the last time the same line was drawn. The result must not
-// be modified.
+// be modified. When the Profiler's version changes, every cached answer is
+// dropped.
 func (e *Engine) SyntaxSpansAt(key LineKey, line []byte) []Span {
+	if e.Profiles == nil {
+		return nil
+	}
+	if v := e.Profiles.Version(); v != e.seen {
+		e.cache, e.seen = nil, v
+	}
 	if spans, ok := e.cache[key]; ok {
 		return spans
 	}
-	spans := append([]Span(nil), e.SyntaxSpans(line)...)
+	spans := append([]Span(nil), e.SyntaxSpans(e.Profiles.ProfileAt(key.Off), line)...)
 	if e.cache == nil || len(e.cache) >= maxCached {
 		e.cache = make(map[LineKey][]Span, maxCached)
 	}

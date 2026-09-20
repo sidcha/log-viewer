@@ -287,11 +287,22 @@ func (a *App) showHelp() {
 			})
 		}
 	}
-	if a.eng.Profile != nil {
-		o.rows = append(o.rows, ovRow{text: "  syntax profile: " + a.eng.Profile.Name, style: "overlay.dim", item: -1})
+	if a.eng.Profiles != nil {
+		if d := a.eng.Profiles.Describe(a.cursorOffset()); d != "" {
+			o.rows = append(o.rows, ovRow{text: "  syntax profile: " + d, style: "overlay.dim", item: -1})
+		}
 	}
 
 	a.ov = o
+}
+
+// cursorOffset is the byte offset of the line the cursor is on.
+func (a *App) cursorOffset() int64 {
+	ln, err := a.activeView().At(a.cursorLine(), nil)
+	if err != nil {
+		return 0
+	}
+	return ln.Off
 }
 
 // helpSection lists bindings under a heading, collapsing the keys bound to

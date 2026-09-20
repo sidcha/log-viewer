@@ -94,10 +94,10 @@ func TestANSIOffLeavesTheTextAlone(t *testing.T) {
 func TestTheLineSColoursWinOverTheSyntaxProfile(t *testing.T) {
 	a, scr := newTestApp(t, "plain \x1b[35mthing\x1b[0m\n")
 	syntax := tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	a.eng.Profile = &highlight.Profile{
+	a.eng.Profiles = highlight.Fixed{P: &highlight.Profile{
 		Name:  "test",
 		Rules: []highlight.Rule{{Re: regexp.MustCompile(`thing`), Style: syntax}},
-	}
+	}}
 	a.draw()
 
 	st := rowStyles(scr, 0)
@@ -114,13 +114,13 @@ func TestTheLineSColoursWinOverTheSyntaxProfile(t *testing.T) {
 func TestTheSyntaxProfileKeepsWhatTheColoursDoNotCover(t *testing.T) {
 	a, scr := newTestApp(t, "plain \x1b[35mthing\x1b[0m\n")
 	syntax := tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	a.eng.Profile = &highlight.Profile{
+	a.eng.Profiles = highlight.Fixed{P: &highlight.Profile{
 		Name: "test",
 		Rules: []highlight.Rule{
 			{Re: regexp.MustCompile(`plain`), Style: syntax},
 			{Re: regexp.MustCompile(`thing`), Style: syntax},
 		},
-	}
+	}}
 	a.draw()
 
 	st := rowStyles(scr, 0)

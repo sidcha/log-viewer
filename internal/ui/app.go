@@ -140,7 +140,7 @@ type searchState struct {
 }
 
 // New builds an App. The caller owns the screen's lifetime.
-func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.Index, profile *highlight.Profile) *App {
+func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.Index, prof highlight.Profiler) *App {
 	opt := cfg.Options()
 
 	a := &App{
@@ -161,7 +161,7 @@ func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.In
 		done:         make(chan struct{}),
 		lastAct:      time.Now(),
 	}
-	a.eng.Profile = profile
+	a.eng.Profiles = prof
 	a.search.cur = -1
 	a.reconfigure()
 

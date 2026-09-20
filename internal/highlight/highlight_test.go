@@ -7,7 +7,7 @@ import (
 
 func numberEngine() *Engine {
 	e := NewEngine(0, 0)
-	e.Profile = &Profile{Name: "t", Rules: []Rule{{Re: regexp.MustCompile(`[0-9]+`)}}}
+	e.Profiles = Fixed{P: &Profile{Name: "t", Rules: []Rule{{Re: regexp.MustCompile(`[0-9]+`)}}}}
 	return e
 }
 
@@ -43,5 +43,42 @@ func TestSyntaxSpansAtStaysBounded(t *testing.T) {
 	}
 	if len(e.cache) > maxCached {
 		t.Errorf("cache holds %d lines, cap %d", len(e.cache), maxCached)
+	}
+}
+
+// switching is a Profiler whose answer changes, as a segment's does when it
+// is decided.
+type switching struct {
+	p   *Profile
+	ver uint64
+}
+
+func (s *switching) ProfileAt(int64) *Profile { return s.p }
+func (s *switching) Describe(int64) string    { return s.p.Name }
+func (s *switching) Version() uint64          { return s.ver }
+
+func TestSyntaxSpansAtForgetsWhenTheProfilerChanges(t *testing.T) {
+	nums := &Profile{Name: "n", Rules: []Rule{{Re: regexp.MustCompile(`[0-9]+`)}}}
+	none := &Profile{Name: "none"}
+	sw := &switching{p: none}
+	e := NewEngine(0, 0)
+	e.Profiles = sw
+	key := LineKey{Off: 0, Len: 4}
+	if got := e.SyntaxSpansAt(key, []byte("a 12")); len(got) != 0 {
+		t.Fatalf("spans = %v before the change", got)
+	}
+	sw.p, sw.ver = nums, 1
+	if got := e.SyntaxSpansAt(key, []byte("a 12")); len(got) != 1 {
+		t.Errorf("a decided profile was not applied to a cached line: %v", got)
+	}
+}
+
+func TestFixedDescribesItself(t *testing.T) {
+	p := &Profile{Name: "kernel"}
+	if got := (Fixed{P: p, Why: "forced"}).Describe(0); got != "kernel (forced)" {
+		t.Errorf("got %q", got)
+	}
+	if got := (Fixed{}).Describe(0); got != "" {
+		t.Errorf("no profile described as %q", got)
 	}
 }

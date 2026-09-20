@@ -297,7 +297,11 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 	scr.SetCursorStyle(tcell.CursorStyleSteadyBlock)
 	scr.Clear()
 
-	app := ui.New(scr, cfg, src, idx, prof)
+	var profiler highlight.Profiler = highlight.Fixed{P: prof}
+	if opt.profile != "" || cfg.Options().Profile != "" {
+		profiler = highlight.Fixed{P: prof, Why: "forced"}
+	}
+	app := ui.New(scr, cfg, src, idx, profiler)
 	defer app.Close()
 
 	w := newWatcher(cfg, src)

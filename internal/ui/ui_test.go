@@ -75,7 +75,7 @@ func newAppOver(t *testing.T, src *source.Source, path, content string, settings
 	t.Cleanup(scr.Fini)
 
 	prof := highlight.Select(cfg.Profiles(), "", path, []byte(content))
-	app := New(scr, cfg, src, idx, prof)
+	app := New(scr, cfg, src, idx, highlight.Fixed{P: prof})
 	t.Cleanup(app.Close)
 	return app, scr
 }
@@ -399,7 +399,7 @@ func TestHighlightStylesMatchingText(t *testing.T) {
 
 func TestSyntaxProfileStylesLevels(t *testing.T) {
 	a, scr := newTestApp(t, "2024-01-02T03:04:05 ERROR disk on fire\n")
-	if a.eng.Profile == nil {
+	if a.eng.Profiles.ProfileAt(0) == nil {
 		t.Fatal("no syntax profile was selected")
 	}
 	if err := a.cfg.Set("cursor-line", "off"); err != nil {

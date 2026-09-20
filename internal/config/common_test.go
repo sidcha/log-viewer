@@ -26,10 +26,9 @@ func styleAt(t *testing.T, profile, line, want string) (tcell.Style, bool) {
 		t.Fatalf("%q not in %q", want, line)
 	}
 	e := highlight.NewEngine(0, 0)
-	e.Profile = p
 	var st tcell.Style
 	covered := false
-	for _, sp := range e.SyntaxSpans([]byte(line)) {
+	for _, sp := range e.SyntaxSpans(p, []byte(line)) {
 		if sp.Start <= i && i < sp.End {
 			st, covered = sp.Style, true
 		}
@@ -165,11 +164,10 @@ const benchLine = `2026-09-23T12:34:56.789Z host app[1234]: [net] level=warn pee
 
 func benchProfile(b *testing.B, p *highlight.Profile) {
 	e := highlight.NewEngine(0, 0)
-	e.Profile = p
 	line := []byte(benchLine)
 	b.ReportAllocs()
 	for b.Loop() {
-		e.SyntaxSpans(line)
+		e.SyntaxSpans(p, line)
 	}
 }
 
