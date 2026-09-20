@@ -91,6 +91,7 @@ func (r Rule) WithColor(c color.RGB) Rule { r.Color = c; return r }
 type Set struct {
 	rules []Rule
 	onlys int
+	fp    string
 }
 
 // NewSet returns an empty set.
@@ -141,13 +142,23 @@ func (s *Set) clone() *Set {
 	return n
 }
 
+// recount derives what the rules imply, once, when a set is built.
 func (s *Set) recount() {
 	s.onlys = 0
+	var fp strings.Builder
 	for _, r := range s.rules {
 		if r.Enabled && r.Action == Only {
 			s.onlys++
 		}
+		if !r.Enabled || r.Action == Highlight {
+			continue
+		}
+		fp.WriteString(r.Action.String())
+		fp.WriteByte(':')
+		fp.WriteString(r.M.Pattern())
+		fp.WriteByte('\n')
 	}
+	s.fp = fp.String()
 }
 
 // Add returns a set with r appended. If r has no colour one is chosen that is
@@ -289,19 +300,7 @@ func (s *Set) enabled(a Action) map[Matcher]bool {
 // Fingerprint identifies the filtering behaviour of the set. A scan is
 // restarted when it changes and left alone when it does not, so adding a
 // highlight does not throw away a filter scan in progress.
-func (s *Set) Fingerprint() string {
-	var b strings.Builder
-	for _, r := range s.rules {
-		if !r.Enabled || r.Action == Highlight {
-			continue
-		}
-		b.WriteString(r.Action.String())
-		b.WriteByte(':')
-		b.WriteString(r.M.Pattern())
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
+func (s *Set) Fingerprint() string { return s.fp }
 
 // Replace returns a set with rule i swapped for r, keeping its position.
 //

@@ -39,6 +39,8 @@ type overlay struct {
 	// body is how many rows the panel showed last time it was drawn, so a
 	// page key moves by what is actually on screen.
 	body int
+	// itemRows caches items; a panel's rows do not change once it is built.
+	itemRows []int
 }
 
 // page is how far Space and its counterparts move.
@@ -64,13 +66,15 @@ func (o *overlay) scroll(n int) {
 
 // items lists the row indices that can be selected.
 func (o *overlay) items() []int {
-	var out []int
-	for i, r := range o.rows {
-		if r.item >= 0 {
-			out = append(out, i)
+	if o.itemRows == nil {
+		o.itemRows = []int{}
+		for i, r := range o.rows {
+			if r.item >= 0 {
+				o.itemRows = append(o.itemRows, i)
+			}
 		}
 	}
-	return out
+	return o.itemRows
 }
 
 func (o *overlay) moveSel(delta int) {
