@@ -1,4 +1,12 @@
 // Package ui is the terminal front end: event loop, rendering, prompts.
+//
+// lv has one front end, and tcell is it. The packages this one draws with --
+// highlight, ansi, config, color -- use tcell's Style and Color types
+// directly rather than a neutral styling type of their own. That keeps a style
+// read from a config file the same value that is drawn, with no conversion
+// between. The matching core, filter and view, depends on none of it, and a
+// second front end would start by giving those packages a style type of their
+// own.
 package ui
 
 import (

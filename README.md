@@ -35,7 +35,9 @@ With direnv, `direnv allow` puts the toolchain on your path directly.
 ## Keys
 
 The default map is vi's, so most of it should already be in your fingers.
-Everything can be replaced by name in your own config.
+Every key in every mode — the match window, the prompt, the panels, the
+questions — can be replaced by name in your own config; see
+[Configuration](#configuration).
 
 ### Motions
 
@@ -312,6 +314,9 @@ the last:
 $LV_CONFIG               if set
 ```
 
+On Windows the system file is `%ProgramData%\lv\config` and the per-user one
+`%AppData%\lv\config`.
+
 Read and write them with `lv config`:
 
 ```sh
@@ -481,11 +486,13 @@ never appeared together is not silently run together.
 
 | | |
 |---|---|
-| Line index | Every 1024th line's offset only, and the table is **capped**: past 2²⁰ entries every second one is dropped and the stride doubles, so index memory is O(1) in file size. Seeking to a line means jumping to the nearest checkpoint and scanning forward one block. |
-| Filtered view | The same sparse trick over *matching* lines, so a filter that keeps a billion lines costs the same ceiling. |
-| File bytes | Read with `pread(2)` and cached by the kernel, which reclaims under pressure for free. `lv` keeps no copy of its own. Full-file passes hand ranges back with `posix_fadvise(DONTNEED)` so scanning a huge log does not evict everything else on the machine. |
-| Rendering | Only visible lines are laid out and highlighted, so frame cost is independent of file size. Buffers are reused, so drawing allocates nothing. |
-| Idle | `GOGC=50`, and `debug.FreeOSMemory()` once the UI has been quiet, so freed memory goes back to the OS. |
+| Line index | A checkpoint every 1024 lines or every MiB, whichever comes first, and the table is **capped**: past 2¹⁹ entries of 16 bytes every second one is dropped and the strides double, so index memory is O(1) in file size. Seeking to a line means jumping to the nearest checkpoint and scanning forward a stride. |
+| Filtered view | The same table over *matching* lines — a checkpoint every 1024 matches, and every 256 KiB whatever matched — so a filter that keeps a billion lines costs the same ceiling, and reaching the next of a handful of rare matches reads at most one stride of bytes, not the gigabytes between them. The positions of the lines on screen are remembered, so a redraw or a one-line scroll costs no scan at all. |
+| Changing rules | A change that can only hide lines — a `never` rule added, an `only` rule dropped — rescans only where the old filter found something, skipping every stretch it had already ruled out. Adding a highlight rescans nothing. |
+| File bytes | Read with `pread(2)` and cached by the kernel, which reclaims under pressure for free. `lv` keeps no copy of its own. On Linux, full-file passes hand ranges back with `posix_fadvise(DONTNEED)` so scanning a huge log does not evict everything else on the machine. |
+| Matching | Literal patterns use a vectorised substring search. A regex runs on RE2, in linear time, unless it needs lookaround or backreferences. |
+| Rendering | Only visible lines are laid out and highlighted, so frame cost is independent of file size; a line's syntax colouring is remembered while it stays on screen. Background progress asks for at most sixty frames a second, however fast the scan publishes. |
+| Idle | `GOGC=50`, and `debug.FreeOSMemory()` once the UI has been quiet (`idle-release`), so freed memory goes back to the OS. |
 
 Indexing, filtering, searching and saving run in the background, publish partial
 results as they go, and are cancellable with <kbd>Esc</kbd>. The first screen is
@@ -506,13 +513,16 @@ file is 2.7× the machine's total memory — reading from SD at ~94 MB/s:
 | **Peak RSS, interactive session** | **16.6 MiB** while 17.2 GiB was read through a concurrent index and filter |
 
 Line counts and filter results were checked against an independent scan; see
-`make scale`.
+`make scale`. These figures were taken before checkpoints gained a byte axis and
+their own line numbers, which doubles an index entry to 16 bytes — about 1.5 MiB
+for those 99,821 checkpoints — and has not been re-measured on that machine.
+`make scale` holds the resident set to its budget on any machine.
 
 ### Following
 
-Change notification comes from the kernel — inotify, kqueue,
-`ReadDirectoryChangesW` — so an appended line shows up in microseconds and an
-idle viewer wakes up never. A slow poll runs alongside as a backstop, because
+Change notification comes from the kernel — inotify on Linux, kqueue on macOS
+and the BSDs, `ReadDirectoryChangesW` on Windows — so an appended line shows up
+in microseconds and an idle viewer wakes up never. A slow poll runs alongside as a backstop, because
 kernel notifications are not universally reliable: they do not work on NFS or
 CIFS, some FUSE filesystems drop them, and inotify watches can be exhausted.
 Missing an append is a visible bug in a log viewer, so the poll guarantees
@@ -606,10 +616,20 @@ Nothing here needs a flag in `core.pager`, since `lv`'s own configuration
 cascades the same way git's does. If you would rather keep it in one place,
 `core.pager = "lv --set alt-screen=off"` works too.
 
+## Platforms
+
+`lv` builds and runs on Linux, macOS, FreeBSD, OpenBSD and Windows; `make
+cross` builds and vets every one of them, and `make check` runs it. Two things
+are Linux-only: stopping the program piping into `lv` on exit needs `/proc` to
+find it, and handing scanned pages back to the kernel needs `posix_fadvise`.
+Asking the terminal for its colours needs a Unix tty; on Windows `COLORFGBG` or
+the `background` setting decides.
+
 ## Testing
 
 ```sh
 make test                                  # unit and TUI tests
+make cross                                 # build and vet every platform
 make race                                  # needs a 48-bit VMA kernel
 make scale LV_SCALE_FILE=/path/to/huge.log # correctness and RSS at scale
 ```
