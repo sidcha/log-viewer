@@ -265,3 +265,31 @@ func TestNarrows(t *testing.T) {
 		}
 	}
 }
+
+func TestActionNextCycles(t *testing.T) {
+	a := Only
+	for _, want := range []Action{Never, Highlight, Only} {
+		a = a.Next()
+		if a != want {
+			t.Fatalf("Next = %v, want %v", a, want)
+		}
+	}
+}
+
+func TestRuleWithChangesOneThing(t *testing.T) {
+	m := mustCompile(t, "a", Sensitive)
+	r := Rule{Action: Only, M: m, Enabled: true, Color: color.RGB{R: 1}}
+	if got := r.WithAction(Never); got.Action != Never || got.M != m || !got.Enabled || got.Color != r.Color {
+		t.Errorf("WithAction = %+v", got)
+	}
+	if got := r.WithColor(color.RGB{B: 9}); got.Color != (color.RGB{B: 9}) || got.Action != Only {
+		t.Errorf("WithColor = %+v", got)
+	}
+	m2 := mustCompile(t, "b", Sensitive)
+	if got := r.WithMatcher(m2); got.M != m2 || got.Color != r.Color {
+		t.Errorf("WithMatcher = %+v", got)
+	}
+	if r.Action != Only {
+		t.Error("the original rule changed")
+	}
+}

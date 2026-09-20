@@ -4,9 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
-	"github.com/sidcha/log-viewer/internal/filter"
 )
 
 // runCommandLine executes one line typed at the `:` prompt.
@@ -44,98 +42,4 @@ func (a *App) runCommandLine(text string) {
 		return
 	}
 	a.exec(cmd, 0)
-}
-
-// replaceRule swaps a rule's pattern, keeping its action, colour and position
-// so the list does not reorder under the user mid-edit.
-func (a *App) replaceRule(i int, pattern string) {
-	rules := a.rules.All()
-	if i < 0 || i >= len(rules) {
-		return
-	}
-	a.replaceRuleMode(i, pattern, rules[i].M.Mode())
-}
-
-// replaceRuleMode swaps a rule's pattern, keeping its action, colour and
-// position so the list does not reorder under the user mid-edit.
-func (a *App) replaceRuleMode(i int, pattern string, mode filter.Mode) {
-	rules := a.rules.All()
-	if i < 0 || i >= len(rules) {
-		return
-	}
-	old := rules[i]
-	m, err := filter.Compile(pattern, mode, a.opts().Case)
-	if err != nil {
-		a.errorf("bad pattern: %v", err)
-		return
-	}
-
-	next := a.rules.Replace(i, filter.Rule{
-		Action:  old.Action,
-		M:       m,
-		Enabled: old.Enabled,
-		Color:   old.Color,
-	})
-	a.applyRules(next, true)
-	a.infof("rule %d is now %s", i+1, pattern)
-
-	if a.ov != nil && a.ov.kind == ovRules {
-		a.showRules()
-	}
-}
-
-// cycleRuleAction moves a rule between only, never and highlight in place,
-// which is usually what you want after seeing what it actually caught.
-func (a *App) cycleRuleAction(i int) {
-	rules := a.rules.All()
-	if i < 0 || i >= len(rules) {
-		return
-	}
-	old := rules[i]
-
-	var next filter.Action
-	switch old.Action {
-	case filter.Only:
-		next = filter.Never
-	case filter.Never:
-		next = filter.Highlight
-	default:
-		next = filter.Only
-	}
-
-	a.applyRules(a.rules.Replace(i, filter.Rule{
-		Action:  next,
-		M:       old.M,
-		Enabled: old.Enabled,
-		Color:   old.Color,
-	}), true)
-	a.showRules()
-}
-
-// recolourRule assigns a fresh colour, for when two rules landed too close
-// together to tell apart.
-func (a *App) recolourRule(i int) {
-	rules := a.rules.All()
-	if i < 0 || i >= len(rules) {
-		return
-	}
-	old := rules[i]
-
-	// Exclude this rule's own colour from the set being avoided, or it would
-	// be treated as one to stay away from and the choice would be needlessly
-	// constrained.
-	used := make([]color.RGB, 0, len(rules))
-	for j, r := range rules {
-		if j != i {
-			used = append(used, r.Color)
-		}
-	}
-
-	a.applyRules(a.rules.Replace(i, filter.Rule{
-		Action:  old.Action,
-		M:       old.M,
-		Enabled: old.Enabled,
-		Color:   filter.NextColor(used),
-	}), false)
-	a.showRules()
 }

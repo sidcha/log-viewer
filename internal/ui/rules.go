@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/sidcha/log-viewer/internal/color"
+	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/ruleset"
 )
 
@@ -85,4 +87,50 @@ func (a *App) promptSaveRules(after func()) {
 	if a.rulesPath != "" {
 		a.prompt.set(a.rulesPath)
 	}
+}
+
+// A rule is edited in place, keeping its position, so the list does not
+// reorder under the user mid-edit.
+
+// replaceRuleMode gives rule i a new pattern.
+func (a *App) replaceRuleMode(i int, pattern string, mode filter.Mode) {
+	rules := a.rules.All()
+	if i < 0 || i >= len(rules) {
+		return
+	}
+	m, err := filter.Compile(pattern, mode, a.opts().Case)
+	if err != nil {
+		a.errorf("bad pattern: %v", err)
+		return
+	}
+	a.applyRules(a.rules.Replace(i, rules[i].WithMatcher(m)), true)
+	a.infof("rule %d is now %s", i+1, pattern)
+
+	if a.ov != nil && a.ov.kind == ovRules {
+		a.showRules()
+	}
+}
+
+// cycleRuleAction moves a rule between only, never and highlight in place,
+// which is usually what you want after seeing what it actually caught.
+func (a *App) cycleRuleAction(i int) {
+	r := a.rules.All()[i]
+	a.updateRuleList(a.rules.Replace(i, r.WithAction(r.Action.Next())))
+}
+
+// recolourRule assigns a fresh colour, for when two rules landed too close
+// together to tell apart.
+func (a *App) recolourRule(i int) {
+	rules := a.rules.All()
+
+	// Exclude this rule's own colour from the set being avoided, or it would
+	// be treated as one to stay away from and the choice would be needlessly
+	// constrained.
+	used := make([]color.RGB, 0, len(rules))
+	for j, r := range rules {
+		if j != i {
+			used = append(used, r.Color)
+		}
+	}
+	a.updateRuleList(a.rules.Replace(i, rules[i].WithColor(filter.NextColor(used))))
 }

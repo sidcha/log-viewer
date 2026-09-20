@@ -31,6 +31,18 @@ func (a Action) String() string {
 	}
 }
 
+// Next is the action after a, cycling through only, never and highlight.
+func (a Action) Next() Action {
+	switch a {
+	case Only:
+		return Never
+	case Never:
+		return Highlight
+	default:
+		return Only
+	}
+}
+
 // ParseAction reads an action name.
 func ParseAction(s string) (Action, error) {
 	switch strings.ToLower(s) {
@@ -54,6 +66,15 @@ type Rule struct {
 	// glance.
 	Color color.RGB
 }
+
+// WithAction returns the rule doing something else with the same pattern.
+func (r Rule) WithAction(a Action) Rule { r.Action = a; return r }
+
+// WithMatcher returns the rule with a different pattern.
+func (r Rule) WithMatcher(m Matcher) Rule { r.M = m; return r }
+
+// WithColor returns the rule marked in a different colour.
+func (r Rule) WithColor(c color.RGB) Rule { r.Color = c; return r }
 
 // Set is the ordered list of rules the viewer is applying.
 //
