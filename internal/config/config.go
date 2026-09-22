@@ -155,9 +155,12 @@ type Config struct {
 	// tokenOrder keeps their declaration order for Dump.
 	tokens     map[string]*highlight.TokenSet
 	tokenOrder []string
-	presets    []Preset
-	loaded     []string
-	sourced    map[string]bool
+	// markers lists segment markers in declaration order, top-level and
+	// profile ones interleaved.
+	markers []*highlight.Marker
+	presets []Preset
+	loaded  []string
+	sourced map[string]bool
 	// background is the resolved terminal background, selecting which
 	// `background dark { }` blocks apply.
 	background string
@@ -325,6 +328,9 @@ func (c *Config) Profiles() []*highlight.Profile { return c.profiles }
 
 // Presets lists highlights declared in configuration.
 func (c *Config) Presets() []Preset { return c.presets }
+
+// Markers lists the segment markers, in the order they were declared.
+func (c *Config) Markers() []*highlight.Marker { return c.markers }
 
 // ------------------------------------------------------------------ parsing
 
@@ -535,6 +541,13 @@ func (c *Config) directive(st stmt) error {
 		}
 		c.presets = append(c.presets, p)
 
+	case "marker":
+		m, err := parseMarker(st, nil)
+		if err != nil {
+			return err
+		}
+		c.markers = append(c.markers, m)
+
 	case "source":
 		if len(w) != 2 {
 			return st.errf("usage: source <path>")
@@ -634,6 +647,13 @@ func (c *Config) profileBlock(head stmt, body []stmt) error {
 			}
 			p.Detects = append(p.Detects, re)
 
+		case "marker":
+			m, err := parseMarker(st, p)
+			if err != nil {
+				return err
+			}
+			c.markers = append(c.markers, m)
+
 		case "clear":
 			p.Items = nil
 
@@ -656,6 +676,27 @@ func (c *Config) profileBlock(head stmt, body []stmt) error {
 		}
 	}
 	return nil
+}
+
+// parseMarker reads `marker <literal> [regex]`; p is the profile it names,
+// or nil at top level.
+func parseMarker(st stmt, p *highlight.Profile) (*highlight.Marker, error) {
+	w := st.Words
+	if len(w) < 2 || len(w) > 3 {
+		return nil, st.errf("usage: marker <literal> [regex]")
+	}
+	if w[1] == "" {
+		return nil, st.errf("marker literal must not be empty")
+	}
+	m := &highlight.Marker{Lit: []byte(w[1]), Profile: p}
+	if len(w) == 3 {
+		re, err := regexp.Compile(w[2])
+		if err != nil {
+			return nil, st.errf("%v", err)
+		}
+		m.Re = re
+	}
+	return m, nil
 }
 
 // ruleItem parses a `rule <regex> <style> [group=N]` line of a profile or
@@ -891,10 +932,28 @@ func (c *Config) Dump() string {
 		for _, re := range p.Detects {
 			fmt.Fprintf(&b, "    detect %s\n", quoteWord(re.String()))
 		}
+		for _, m := range c.markers {
+			if m.Profile == p {
+				dumpMarker(&b, "    ", m)
+			}
+		}
 		dumpItems(&b, p.Items)
 		b.WriteString("}\n")
 	}
+	for _, m := range c.markers {
+		if m.Profile == nil {
+			dumpMarker(&b, "", m)
+		}
+	}
 	return b.String()
+}
+
+func dumpMarker(b *strings.Builder, indent string, m *highlight.Marker) {
+	fmt.Fprintf(b, "%smarker %s", indent, quoteWord(string(m.Lit)))
+	if m.Re != nil {
+		fmt.Fprintf(b, " %s", quoteWord(m.Re.String()))
+	}
+	b.WriteByte('\n')
 }
 
 func dumpItems(b *strings.Builder, items []highlight.Item) {

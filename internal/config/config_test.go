@@ -588,3 +588,44 @@ profile a {
 		t.Errorf("dump did not round-trip: profile a has %d rules", len(p.Rules))
 	}
 }
+
+func TestMarkersAreReadInConfigOrder(t *testing.T) {
+	c := parseResolved(t, `
+style s fg=#010203
+marker 'Starting kernel'
+profile uboot {
+    marker 'U-Boot ' '^U-Boot [0-9]{4}'
+    rule '=> ' s
+}
+`)
+	ms := c.Markers()
+	if len(ms) != 2 || string(ms[0].Lit) != "Starting kernel" || ms[0].Profile != nil {
+		t.Fatalf("first marker = %+v, want the top-level one", ms)
+	}
+	if string(ms[1].Lit) != "U-Boot " || ms[1].Profile == nil || ms[1].Profile.Name != "uboot" || ms[1].Re == nil {
+		t.Errorf("second marker = %+v, want uboot's with its regex", ms[1])
+	}
+}
+
+func TestMarkerNeedsALiteral(t *testing.T) {
+	if err := New().Parse("<t>", "marker ''\n"); err == nil || !strings.Contains(err.Error(), "<t>:1") {
+		t.Errorf("err = %v, want an empty literal rejected with its position", err)
+	}
+	if err := New().Parse("<t>", "marker 'x' '('\n"); err == nil {
+		t.Error("a bad marker regex was accepted")
+	}
+}
+
+func TestDumpKeepsMarkers(t *testing.T) {
+	c := parseResolved(t, `
+style s fg=#010203
+marker 'Starting kernel'
+profile uboot {
+    marker 'U-Boot ' '^U-Boot'
+}
+`)
+	c2 := parseResolved(t, c.Dump())
+	if len(c2.Markers()) != 2 {
+		t.Errorf("markers after round trip: %d, want 2", len(c2.Markers()))
+	}
+}
