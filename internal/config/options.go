@@ -40,6 +40,9 @@ type Options struct {
 	MaxCheckpoints   int           `setting:"max-checkpoints"`
 	PageCacheAdvise  string        `setting:"page-cache-advise"`
 	Profile          string        `setting:"profile"`
+	DetectLines      int           `setting:"detect-lines"`
+	DetectThreshold  int           `setting:"detect-threshold"`
+	DetectWait       time.Duration `setting:"detect-wait"`
 	Mouse            bool          `setting:"mouse"`
 	Gutter           string        `setting:"gutter"`
 	MessageTimeout   time.Duration `setting:"message-timeout"`

@@ -62,3 +62,16 @@ func TestOptionsFollowTheSettings(t *testing.T) {
 		t.Errorf("Options = %+v", o)
 	}
 }
+
+func TestDetectSettingsHaveTheirRange(t *testing.T) {
+	c := New()
+	o := c.Options()
+	if o.DetectLines != 64 || o.DetectThreshold != 30 || o.DetectWait != 2*time.Second {
+		t.Errorf("defaults = %d, %d, %v", o.DetectLines, o.DetectThreshold, o.DetectWait)
+	}
+	for _, bad := range [][2]string{{"detect-lines", "0"}, {"detect-threshold", "0"}, {"detect-threshold", "101"}, {"detect-wait", "0"}, {"detect-wait", "-1s"}} {
+		if err := c.SetFrom(bad[0], bad[1], "<t>"); err == nil {
+			t.Errorf("set %s %s was accepted", bad[0], bad[1])
+		}
+	}
+}

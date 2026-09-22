@@ -82,11 +82,9 @@ func TestVisiblePrefixDropsEscapes(t *testing.T) {
 	}
 }
 
-// Review focus 3: a CR line ending must not defeat a $-anchored pattern.
-func TestSelectTrimsCarriageReturns(t *testing.T) {
-	p := detecting("p", nil, `^ok$`)
-	gen := &Profile{Name: "generic"}
-	if got := Select([]*Profile{p, gen}, "", "f", []byte("ok\r\nok\r\n")); got != p {
-		t.Errorf("got %v, want p", got)
+// A CR line ending must not defeat a $-anchored pattern.
+func TestVisiblePrefixTrimsACarriageReturn(t *testing.T) {
+	if got := visiblePrefix(nil, []byte("ok\r"), 512); string(got) != "ok" {
+		t.Errorf("got %q, want ok", got)
 	}
 }

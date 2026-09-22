@@ -446,9 +446,38 @@ lv --background light --dump-config | grep '^style'
 
 `lv` recognises *log* formats, not programming languages. It ships with profiles
 for `kernel` (dmesg/`kern.log`), `syslog`, `iso` (ISO-8601 timestamped
-application logs), `json` line-delimited records, and a `generic` fallback. The
-profile is chosen by filename glob, then by sniffing the head of the file;
-`-p NAME` forces one and `-p none` turns it off.
+application logs), `json` line-delimited records, and a `generic` fallback.
+
+The profile is chosen from what the log contains: lv samples its first 64
+lines and picks the profile whose `detect` patterns match the largest share,
+if that is at least 30%. A filename glob adds to a profile's score but never
+decides alone, so a kernel log called `app.log` is still a kernel log; only a
+profile with no `detect` patterns is chosen by its glob. `-p NAME` forces one
+and `-p none` turns it off; the help overlay (`F1`) says which profile the
+line under the cursor has and why.
+
+A capture from a serial console passes through several programs — firmware,
+a bootloader, a kernel — and each can be recognised in turn. A `marker` line
+starts a new stretch of the log: inside a profile it names that profile,
+at the top level it says only that something new begins, and the next 64
+lines decide what. Markers are configured like profiles and lv ships none of
+its own. With the example below, a device that reboots while you follow it
+switches to its bootloader's colours on the banner, since markers are found
+while the file is indexed.
+
+```conf
+marker 'Starting kernel'
+profile uboot {
+    marker 'U-Boot ' '^U-Boot [0-9]{4}\.[0-9]{2}'
+    rule '^=> ' syntax.level.warn
+}
+```
+
+A stretch is decided once it has 64 lines, or `detect-wait` after its first
+line if fewer have come. When a file is opened without `-f`, the part already
+written is decided as soon as it has been read. `detect-lines`,
+`detect-threshold` and `detect-wait` tune the sample, the share it must
+reach, and the wait.
 
 Every profile starts from `tokens common`, the tokens nearly every log shares:
 timestamps, numbers with their units, IP and MAC addresses, UUIDs, paths and

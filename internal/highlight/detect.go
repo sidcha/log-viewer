@@ -7,13 +7,6 @@ import (
 	"github.com/sidcha/log-viewer/internal/ansi"
 )
 
-// DefaultDetectLines and DefaultDetectThreshold are the detect-lines and
-// detect-threshold defaults.
-const (
-	DefaultDetectLines     = 64
-	DefaultDetectThreshold = 30
-)
-
 // globBonus is what a filename glob adds to a profile's score, in percent.
 // It is below the default threshold, so a name alone never decides.
 const globBonus = 25
@@ -112,20 +105,3 @@ func visiblePrefix(dst, line []byte, n int) []byte {
 }
 
 func isBlank(b []byte) bool { return len(bytes.TrimSpace(b)) == 0 }
-
-// headSample splits the head of a file into up to n non-blank visible lines.
-func headSample(head []byte, n int) [][]byte {
-	var out [][]byte
-	for len(head) > 0 && len(out) < n {
-		line := head
-		if i := bytes.IndexByte(head, '\n'); i >= 0 {
-			line, head = head[:i], head[i+1:]
-		} else {
-			head = nil
-		}
-		if v := visiblePrefix(nil, line, sampleLineBytes); !isBlank(v) {
-			out = append(out, v)
-		}
-	}
-	return out
-}

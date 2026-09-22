@@ -83,6 +83,9 @@ var Settings = []Setting{
 	{"max-checkpoints", kInt, "524288", nil, Startup, "line-index checkpoint ceiling (16 bytes each) before the stride doubles"},
 	{"page-cache-advise", kEnum, "auto", []string{"auto", "on", "off"}, Startup, "hand scanned pages back to the kernel"},
 	{"profile", kStr, "", nil, Startup, "force a syntax profile instead of detecting one"},
+	{"detect-lines", kInt, "64", nil, Startup, "lines sampled to choose each segment's syntax profile"},
+	{"detect-threshold", kInt, "30", nil, Startup, "percent of sampled lines a profile must match to be chosen"},
+	{"detect-wait", kDur, "2s", nil, Startup, "how long a segment waits for its sample before choosing from what it has"},
 	{"mouse", kBool, "on", nil, Live, "turn the wheel into <WheelUp> and <WheelDown> keys"},
 	{"gutter", kStr, "│ ", nil, Live, "separator drawn after the line-number gutter"},
 	{"message-timeout", kDur, "4s", nil, Live, "how long a status message stays up"},
@@ -331,6 +334,22 @@ func (c *Config) Presets() []Preset { return c.presets }
 
 // Markers lists the segment markers, in the order they were declared.
 func (c *Config) Markers() []*highlight.Marker { return c.markers }
+
+// DetectOptions gathers what a highlight.Detector needs to divide the file
+// at path into segments. Notify is left for the caller.
+func (c *Config) DetectOptions(path string) highlight.DetectOptions {
+	o := c.Options()
+	return highlight.DetectOptions{
+		Profiles:  c.profiles,
+		Markers:   c.markers,
+		Generic:   highlight.Find(c.profiles, "generic"),
+		Base:      filepath.Base(path),
+		Lines:     o.DetectLines,
+		Threshold: o.DetectThreshold,
+		Wait:      o.DetectWait,
+		Follow:    o.Follow,
+	}
+}
 
 // ------------------------------------------------------------------ parsing
 
@@ -812,6 +831,19 @@ func (c *Config) Resolve() error {
 	return nil
 }
 
+// intRanges bounds the integer settings for which "not negative" is not
+// enough.
+var intRanges = map[string][2]int{
+	"detect-lines":     {1, 4096},
+	"detect-threshold": {1, 100},
+}
+
+// positiveDurs lists the duration settings that zero would switch off
+// without saying so.
+var positiveDurs = map[string]bool{
+	"detect-wait": true,
+}
+
 func validate(s *Setting, value string) error {
 	switch s.Kind {
 	case kBool:
@@ -827,9 +859,16 @@ func validate(s *Setting, value string) error {
 		if n < 0 {
 			return fmt.Errorf("%s: must not be negative", s.Name)
 		}
+		if r, ok := intRanges[s.Name]; ok && (n < r[0] || n > r[1]) {
+			return fmt.Errorf("%s: must be between %d and %d", s.Name, r[0], r[1])
+		}
 	case kDur:
-		if _, err := time.ParseDuration(value); err != nil {
+		d, err := time.ParseDuration(value)
+		if err != nil {
 			return fmt.Errorf("%s: expected a duration such as 150ms, got %q", s.Name, value)
+		}
+		if positiveDurs[s.Name] && d <= 0 {
+			return fmt.Errorf("%s: must be more than 0", s.Name)
 		}
 	case kEnum:
 		for _, e := range s.Enum {

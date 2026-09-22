@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -28,10 +27,6 @@ import (
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
-
-// sniffBytes is how much of the head of the file is read to detect a syntax
-// profile.
-const sniffBytes = 1 << 16
 
 type stringList []string
 
@@ -163,7 +158,7 @@ func run() int {
 		applyPagerDefaults(cfg)
 	}
 
-	prof, err := pickProfile(cfg, src, opt.profile)
+	prof, det, err := newProfiler(cfg, src, opt.profile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
@@ -191,7 +186,7 @@ func run() int {
 	// trading a little CPU for a smaller resident set is the right default.
 	debug.SetGCPercent(50)
 
-	err = serve(cfg, src, prof, rules, &opt)
+	err = serve(cfg, src, prof, det, rules, &opt)
 	stopProducer(cfg, src)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
@@ -267,7 +262,7 @@ func deriveStyles(cfg *config.Config, term termcolor.Colors) {
 		Background(color.Blend(bg, fg, float64(cfg.Options().CursorLineTint)/100).Tcell()))
 }
 
-func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rules *ruleset.File, opt *options) error {
+func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det *highlight.Detector, rules *ruleset.File, opt *options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
@@ -297,21 +292,26 @@ func serve(cfg *config.Config, src *source.Source, prof *highlight.Profile, rule
 	scr.SetCursorStyle(tcell.CursorStyleSteadyBlock)
 	scr.Clear()
 
-	var profiler highlight.Profiler = highlight.Fixed{P: prof}
-	if opt.profile != "" || cfg.Options().Profile != "" {
-		profiler = highlight.Fixed{P: prof, Why: "forced"}
-	}
-	app := ui.New(scr, cfg, src, idx, profiler)
+	app := ui.New(scr, cfg, src, idx, prof)
 	defer app.Close()
 
 	w := newWatcher(cfg, src)
 	defer w.Close()
 
+	// A nil *Detector in the interface would not be a nil Observer.
+	var obs index.Observer
+	if det != nil {
+		det.SetNotify(app.Wake)
+		defer det.Close()
+		obs = det
+	}
+
 	ixr := index.NewIndexer(src, idx, index.Options{
-		Wake:   w.Events(),
-		Block:  o.BlockSize,
-		Advise: o.PageCacheAdvise,
-		Notify: app.Wake,
+		Wake:     w.Events(),
+		Block:    o.BlockSize,
+		Advise:   o.PageCacheAdvise,
+		Notify:   app.Wake,
+		Observer: obs,
 	})
 	ictx, icancel := context.WithCancel(ctx)
 	defer icancel()
@@ -427,32 +427,26 @@ func applyFlagOverrides(cfg *config.Config, opt *options) error {
 	return nil
 }
 
-// pickProfile resolves the syntax profile, sniffing the head of the file when
-// no name was forced.
-func pickProfile(cfg *config.Config, src *source.Source, forced string) (*highlight.Profile, error) {
+// newProfiler decides how lines get their syntax profile. One named on
+// the command line or in the configuration applies to the whole file;
+// otherwise a Detector finds one per segment as the indexer reads.
+func newProfiler(cfg *config.Config, src *source.Source, forced string) (highlight.Profiler, *highlight.Detector, error) {
 	if forced == "" {
 		forced = cfg.Options().Profile
 	}
-	if forced == "none" {
-		return nil, nil
+	switch forced {
+	case "none":
+		return highlight.Fixed{}, nil, nil
+	case "":
+		det := highlight.NewDetector(cfg.DetectOptions(src.Name()))
+		return det.Segments(), det, nil
 	}
-
-	var head []byte
-	if forced == "" {
-		buf := make([]byte, sniffBytes)
-		n, err := src.ReadAt(buf, 0)
-		if err != nil && err != io.EOF && n == 0 {
-			return nil, err
-		}
-		head = buf[:n]
-	}
-
-	p := highlight.Select(cfg.Profiles(), forced, src.Name(), head)
-	if p == nil && forced != "" {
-		return nil, fmt.Errorf("unknown profile %q (have: %s)",
+	p := highlight.Find(cfg.Profiles(), forced)
+	if p == nil {
+		return nil, nil, fmt.Errorf("unknown profile %q (have: %s)",
 			forced, strings.Join(highlight.Names(cfg.Profiles()), ", "))
 	}
-	return p, nil
+	return highlight.Fixed{P: p, Why: "forced"}, nil, nil
 }
 
 func usage() {

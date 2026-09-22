@@ -10,7 +10,6 @@
 package highlight
 
 import (
-	"path/filepath"
 	"regexp"
 
 	"github.com/gdamore/tcell/v2"
@@ -194,19 +193,6 @@ func (e *Engine) addRule(line []byte, r *Rule) {
 			e.spans = append(e.spans, Span{Start: m[g], End: m[g+1], Style: r.Style})
 		}
 	}
-}
-
-// Select picks the profile for a file: an explicit name wins; otherwise the
-// head of the file is scored, and "generic" is the answer when nothing fits.
-func Select(profiles []*Profile, name, path string, head []byte) *Profile {
-	if name != "" {
-		return Find(profiles, name)
-	}
-	sample := headSample(head, DefaultDetectLines)
-	if p, _ := Score(profiles, sample, filepath.Base(path), DefaultDetectThreshold); p != nil {
-		return p
-	}
-	return Find(profiles, "generic")
 }
 
 // Names lists the available profile names, for the help screen and for

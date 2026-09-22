@@ -48,10 +48,41 @@ func newTestAppWith(t *testing.T, content string, settings ...string) (*App, tce
 // supply a pipe instead of a file.
 func newAppOver(t *testing.T, src *source.Source, path, content string, settings ...string) (*App, tcell.SimulationScreen) {
 	t.Helper()
+	a, scr, _ := newAppOverConf(t, src, path, "", settings...)
+	return a, scr
+}
+
+// newTestAppConf builds the viewer over content with extra configuration
+// parsed after the built-in file, and returns its indexer so a test can
+// feed it lines appended later.
+func newTestAppConf(t *testing.T, content, conf string) (*App, tcell.SimulationScreen, *index.Indexer) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.log")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src, err := source.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { src.Close() })
+	return newAppOverConf(t, src, path, conf)
+}
+
+func newAppOverConf(t *testing.T, src *source.Source, path, conf string, settings ...string) (*App, tcell.SimulationScreen, *index.Indexer) {
+	t.Helper()
 
 	cfg, err := config.Load(config.LoadOptions{NoUser: true})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if conf != "" {
+		if err := cfg.Parse("<test>", conf); err != nil {
+			t.Fatal(err)
+		}
+		if err := cfg.Resolve(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// Keep the status line out of the way unless a test asks for it.
 	if err := cfg.Set("status-line", "off"); err != nil {
@@ -63,8 +94,10 @@ func newAppOver(t *testing.T, src *source.Source, path, content string, settings
 		}
 	}
 
+	det := highlight.NewDetector(cfg.DetectOptions(path))
+	t.Cleanup(det.Close)
 	idx := index.New(8, 0)
-	ixr := index.NewIndexer(src, idx, index.Options{Block: 256})
+	ixr := index.NewIndexer(src, idx, index.Options{Block: 256, Observer: det})
 	ixr.Sync(t.Context())
 
 	scr := tcell.NewSimulationScreen("UTF-8")
@@ -74,10 +107,9 @@ func newAppOver(t *testing.T, src *source.Source, path, content string, settings
 	scr.SetSize(testW, testH)
 	t.Cleanup(scr.Fini)
 
-	prof := highlight.Select(cfg.Profiles(), "", path, []byte(content))
-	app := New(scr, cfg, src, idx, highlight.Fixed{P: prof})
+	app := New(scr, cfg, src, idx, det.Segments())
 	t.Cleanup(app.Close)
-	return app, scr
+	return app, scr, ixr
 }
 
 // rowText reads one rendered row back as a string.
@@ -399,8 +431,8 @@ func TestHighlightStylesMatchingText(t *testing.T) {
 
 func TestSyntaxProfileStylesLevels(t *testing.T) {
 	a, scr := newTestApp(t, "2024-01-02T03:04:05 ERROR disk on fire\n")
-	if a.eng.Profiles.ProfileAt(0) == nil {
-		t.Fatal("no syntax profile was selected")
+	if got := a.eng.Profiles.Describe(0); !strings.HasPrefix(got, "iso (detected") {
+		t.Fatalf("syntax profile = %q, want iso detected", got)
 	}
 	if err := a.cfg.Set("cursor-line", "off"); err != nil {
 		t.Fatal(err)

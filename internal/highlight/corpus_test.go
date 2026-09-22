@@ -1,6 +1,7 @@
 package highlight_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,18 @@ func TestCorpusChoosesTheProfileItsDirectoryNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := highlight.Select(cfg.Profiles(), "", f, head)
+		det := highlight.NewDetector(cfg.DetectOptions(f))
+		var off int64
+		for n, line := range bytes.SplitAfter(head, []byte("\n")) {
+			if len(line) == 0 {
+				continue
+			}
+			det.ObserveLine(int64(n), off, bytes.TrimSuffix(line, []byte("\n")))
+			off += int64(len(line))
+		}
+		det.ObserveCaughtUp(false)
+		got := det.Segments().ProfileAt(0)
+		det.Close()
 		if got == nil || got.Name != want {
 			name := "<nil>"
 			if got != nil {
