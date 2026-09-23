@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sidcha/log-viewer/internal/filter"
+	"github.com/sidcha/log-viewer/internal/highlight"
 	"github.com/sidcha/log-viewer/internal/index"
 	"github.com/sidcha/log-viewer/internal/source"
 )
@@ -136,6 +137,28 @@ func TestScale(t *testing.T) {
 
 	if gotLines != wantLines {
 		t.Fatalf("indexed %d lines, reference says %d", gotLines, wantLines)
+	}
+
+	// The marker scan rides on this pass, so it must not cost the pass its
+	// disk-bound pace. The file is larger than memory, so both passes read
+	// from disk.
+	gen := &highlight.Profile{Name: "generic"}
+	det := highlight.NewDetector(highlight.DetectOptions{
+		Profiles: []*highlight.Profile{gen}, Generic: gen, Lines: 64, Threshold: 30,
+		Markers: []*highlight.Marker{
+			{Lit: []byte("U-Boot ")}, {Lit: []byte("Starting kernel")}, {Lit: []byte("Booting Linux on physical CPU")},
+			{Lit: []byte("GNU GRUB")}, {Lit: []byte("OpenSBI v")}, {Lit: []byte("NOTICE:  BL")},
+		},
+	})
+	defer det.Close()
+	idx2 := index.New(0, 0)
+	start = time.Now()
+	index.NewIndexer(src, idx2, index.Options{Advise: "on", Observer: det}).Sync(context.Background())
+	detTime := time.Since(start)
+	t.Logf("indexed with markers in %s (%.0f MiB/s), %d segments",
+		detTime.Round(time.Millisecond), float64(sizeMiB)/detTime.Seconds(), det.Segments().Len())
+	if ratio := detTime.Seconds() / indexTime.Seconds(); ratio > 1.10 {
+		t.Errorf("the marker scan slowed indexing by %.0f%%, budget 10%%", (ratio-1)*100)
 	}
 
 	v := NewBase(src, idx, 0, 1<<20)
