@@ -2,7 +2,9 @@ BIN     := lv
 PKG     := ./cmd/lv
 OUT     := bin/$(BIN)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# Tags are v0.2.0 and the flake's version is 0.2.0; lv prints the latter
+# however it was built.
+LDFLAGS := -s -w -X main.version=$(patsubst v%,%,$(VERSION))
 
 # Every target runs inside the nix dev shell. Re-exec into it when we are not
 # already there, so make behaves identically with or without direnv loaded.
