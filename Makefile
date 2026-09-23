@@ -17,7 +17,7 @@ GO := $(NIX) go
 
 GOFILES := $(shell find . -name '*.go' -not -path './bin/*')
 
-.PHONY: all build install test race bench vet fmt lint check clean release scale cross
+.PHONY: all build install test race bench vet fmt lint check clean release scale cross release-check
 
 all: build
 
@@ -62,13 +62,18 @@ cross:
 		GOOS=$${t%/*} GOARCH=$${t#*/} $(GO) vet ./... || exit 1; \
 	done
 
+# The release tooling: its scripts and their end-to-end test.
+release-check:
+	$(NIX) shellcheck scripts/*.sh
+	$(NIX) bash scripts/release_test.sh
+
 fmt:
 	$(NIX) gofmt -w $(GOFILES)
 
 lint:
 	$(NIX) golangci-lint run
 
-check: fmt vet cross test
+check: fmt vet cross test release-check
 	@test -z "$$($(NIX) gofmt -l $(GOFILES))" || { echo "gofmt needed:"; $(NIX) gofmt -l $(GOFILES); exit 1; }
 
 clean:
