@@ -1,0 +1,141 @@
+name: Release
+
+# A release is a tag signed by the release key, laid by scripts/release.sh and
+# pushed to this mirror. The build job verifies the signature before anything
+# else and builds the archives with a read-only token. Only the publish job,
+# which runs none of the repository's code, can write: it creates the GitHub
+# release and asks proxy.golang.org to fetch the version, so
+# `go install ...@vX.Y.Z` works at once.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      module: ${{ steps.module.outputs.module }}
+    # A healthy run takes a few minutes. Loose, because a release killed on a
+    # timeout is worse than a slow one, but not GitHub's six hours.
+    timeout-minutes: 30
+    steps:
+      - name: Validate tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG is not a release tag (vX.Y.Z)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+
+      # checkout can leave the tag as a lightweight ref pointing at the commit,
+      # which has no signature to verify. Fetch the tag object itself.
+      - name: Fetch the tag object
+        run: git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+
+      - name: Import the release key
+        run: |
+          key=$(mktemp)
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsSL https://github.com/sidcha.gpg -o "$key"
+          test -s "$key"
+          gpg --batch --import "$key"
+
+      - name: Verify the tag is signed by the release key
+        run: scripts/verify-release-tag.sh "$TAG"
+
+      - name: Check the tag is the release commit
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$TAG^{commit}")"
+          flake=$(sed -n 's/^ *version = "\([0-9.]*\)";$/\1/p' flake.nix)
+          if [ "v$flake" != "$TAG" ]; then
+            echo "::error::flake.nix says $flake, the tag says $TAG"
+            exit 1
+          fi
+          test -f "changelog/$TAG.md"
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+
+      - name: Check
+        run: make check
+
+      - name: Build the archives
+        run: make dist VERSION="$TAG"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            dist/*
+            changelog/${{ env.TAG }}.md
+          if-no-files-found: error
+
+      - name: Name the module
+        id: module
+        run: echo "module=$(awk '$1 == "module" {print $2}' go.mod)" >>"$GITHUB_OUTPUT"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      # A re-run updates the release in place and re-uploads its files.
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ env.TAG }}
+          name: lv ${{ env.TAG }}
+          body_path: release/changelog/${{ env.TAG }}.md
+          files: release/dist/*
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+
+      # The proxy fetches a version the first time someone asks for it; asking
+      # here means the first user does not wait for it, and pkg.go.dev learns of
+      # the release from the proxy. It can take a moment to see a new tag.
+      - name: Publish to the Go module proxy
+        env:
+          MODULE: ${{ needs.build.outputs.module }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS "https://proxy.golang.org/$MODULE/@v/$TAG.info"; then
+              exit 0
+            fi
+            echo "proxy has not seen $TAG yet (attempt $attempt)"
+            sleep 30
+          done
+          echo "::error::proxy.golang.org did not serve $MODULE@$TAG"
+          exit 1

@@ -48,6 +48,8 @@
             pkgs.go-tools
             pkgs.golangci-lint
             pkgs.shellcheck
+            pkgs.actionlint
+            pkgs.zip
           ];
         };
       });

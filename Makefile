@@ -17,7 +17,7 @@ GO := $(NIX) go
 
 GOFILES := $(shell find . -name '*.go' -not -path './bin/*')
 
-.PHONY: all build install test race bench vet fmt lint check clean release scale cross release-check
+.PHONY: all build install test race bench vet fmt lint check clean release scale cross dist release-check
 
 all: build
 
@@ -62,9 +62,32 @@ cross:
 		GOOS=$${t%/*} GOARCH=$${t#*/} $(GO) vet ./... || exit 1; \
 	done
 
-# The release tooling: its scripts and their end-to-end test.
+# Release archives for every platform in CROSS, and their checksums. The
+# release workflow runs this from a verified tag: make dist VERSION=v0.2.0
+DIST := dist
+
+dist:
+	rm -rf $(DIST) && mkdir -p $(DIST)
+	@set -e; for t in $(CROSS); do \
+		os=$${t%/*}; arch=$${t#*/}; name=$(BIN)_$(VERSION)_$${os}_$${arch}; exe=; \
+		[ $$os = windows ] && exe=.exe; \
+		echo "dist $$name"; \
+		mkdir -p $(DIST)/$$name; \
+		GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/$$name/$(BIN)$$exe $(PKG); \
+		cp README.md LICENSE $(DIST)/$$name/; \
+		if [ $$os = windows ]; then \
+			(cd $(DIST) && $(NIX) zip -qr $$name.zip $$name); \
+		else \
+			tar -C $(DIST) -czf $(DIST)/$$name.tar.gz $$name; \
+		fi; \
+		rm -rf $(DIST)/$$name; \
+	done
+	cd $(DIST) && $(NIX) sha256sum -- * >SHA256SUMS
+
+# The release tooling: its scripts, its end-to-end test and the workflow.
 release-check:
 	$(NIX) shellcheck scripts/*.sh
+	$(NIX) actionlint
 	$(NIX) bash scripts/release_test.sh
 
 fmt:
@@ -77,4 +100,4 @@ check: fmt vet cross test release-check
 	@test -z "$$($(NIX) gofmt -l $(GOFILES))" || { echo "gofmt needed:"; $(NIX) gofmt -l $(GOFILES); exit 1; }
 
 clean:
-	rm -rf bin result
+	rm -rf bin result $(DIST)
