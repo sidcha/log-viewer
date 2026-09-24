@@ -66,7 +66,7 @@ var Settings = []Setting{
 	{"status-line", kEnum, "auto", []string{"auto", "on", "off"}, Live, "when to draw the status line"},
 	{"alt-screen", kBool, "on", nil, Startup, "draw on the alternate screen, restoring the terminal on exit"},
 	{"quit-if-one-screen", kBool, "off", nil, Startup, "print and exit when the whole input fits on the screen"},
-	{"ask-save", kEnum, "auto", []string{"auto", "on", "off"}, Live, "ask before quitting whether to keep piped input"},
+	{"ask-save", kEnum, "off", []string{"auto", "on", "off"}, Live, "ask before quitting whether to keep piped input: auto when it was followed"},
 	{"ask-save-rules", kBool, "on", nil, Live, "ask before quitting whether to save the rules"},
 	{"case", kEnum, "smart", []string{"smart", "sensitive", "insensitive"}, Live, "pattern case sensitivity"},
 	{"tab-width", kInt, "8", nil, Live, "columns per tab stop"},

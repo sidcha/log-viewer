@@ -46,10 +46,13 @@ func newPipedApp(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 }
 
 // newWatchedPipe is the capture case: lv was following the input as it
-// arrived, which is what makes it worth asking about on the way out.
+// arrived, with ask-save auto, which asks about exactly that on the way out.
 func newWatchedPipe(t *testing.T, content string) (*App, tcell.SimulationScreen) {
 	t.Helper()
 	a, scr := newPipedApp(t, content)
+	if err := a.cfg.Set("ask-save", "auto"); err != nil {
+		t.Fatal(err)
+	}
 	run(a, "follow-toggle")
 	if !a.everFollowed {
 		t.Fatal("follow-toggle did not start following")
@@ -200,7 +203,24 @@ func TestPagingAPipeQuitsWithoutAsking(t *testing.T) {
 	}
 }
 
-// TestAskSaveOnAsksEvenWhenPaging, for anyone who wants the old behaviour back.
+// TestFollowingAPipeQuitsWithoutAskingByDefault. lv is a pager first: a
+// question on the way out of every `journalctl -f | lv -f` is a toll paid on
+// every session to protect the rare one worth keeping. ask-save auto or on
+// brings it back.
+func TestFollowingAPipeQuitsWithoutAskingByDefault(t *testing.T) {
+	a, _ := newPipedApp(t, numbered(40))
+	run(a, "follow-toggle")
+
+	run(a, "quit")
+	if a.confirm != nil {
+		t.Errorf("following a pipe asked %q", a.confirm.text)
+	}
+	if !a.quit {
+		t.Error("did not quit")
+	}
+}
+
+// TestAskSaveOnAsksEvenWhenPaging, for anyone who wants every pipe protected.
 func TestAskSaveOnAsksEvenWhenPaging(t *testing.T) {
 	a, _ := newPipedApp(t, numbered(40))
 	if err := a.cfg.Set("ask-save", "on"); err != nil {

@@ -13,8 +13,9 @@ import (
 // unlinked as soon as it is opened, so when the process ends the capture ends
 // with it, and whatever produced it has long since moved on.
 //
-// Both questions can be turned off, since a workflow that pipes a log through
-// lv to glance at it wants neither.
+// The rules question is on by default and the input question off: lv is a
+// pager first, and asking on the way out of every pipe costs every session to
+// protect the rare capture worth keeping. ask-save turns it on.
 
 // requestQuit is the quit command.
 func (a *App) requestQuit() {

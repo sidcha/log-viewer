@@ -23,18 +23,25 @@ behind when `lv` exits. Piped input opens at the top, the way a pager does;
 ### Keeping a capture
 
 Piped input exists nowhere but in that unlinked spool: when the process ends
-the capture ends with it, and whatever produced it has long since moved on. So
-quitting a session that was *following* the input asks about it:
+the capture ends with it, and whatever produced it has long since moved on.
+Save it with `:w` (or `S`) while it is open. lv does not stop to ask on the way
+out, because it is a pager first and a question on every exit is a toll paid
+on every session. If you would rather be asked, turn it on:
+
+```sh
+lv config ask-save auto    # ask when the input was being followed
+lv config ask-save on      # ask about every pipe
+```
+
+and quitting then offers:
 
 ```
 Piped input is not on disk. Keep it?   (y) save all…  (n) discard  (c) cancel
 ```
 
-Following is the signal: it is how you watch something happen — a boot, a
-build, a device talking — and that is a capture. Reading through the output of
-a command is not, and is left alone, because a pager that stopped to ask on the
-way out of `git log` would be intolerable. Set `ask-save on` to be asked every
-time, or `off` for never.
+`auto` treats following as the signal: it is how you watch something happen —
+a boot, a build, a device talking — while reading through the output of
+`git log` is not.
 
 `y` writes **all** of the input, not the filtered view `:w` writes: the question
 was about losing the input, and answering it with a subset would be a trap.
@@ -44,7 +51,7 @@ force, settles the question in advance.
 The rules are a separate question, with its own setting:
 
 ```sh
-lv config ask-save-rules off    # never ask about the rules either
+lv config ask-save-rules off    # never ask about the rules
 ```
 
 `ZQ` and `:q!` skip both regardless.
