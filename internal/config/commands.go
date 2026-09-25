@@ -82,6 +82,7 @@ var Specs = []Spec{
 	{"wrap-toggle", "view", 0, 0, "wrap long lines instead of truncating them"},
 	{"line-numbers-toggle", "view", 0, 0, "show source line numbers in the gutter"},
 	{"status-toggle", "view", 0, 0, "pin the status line on or off"},
+	{"file-info", "view", 0, 0, "show the file, the position in it and its syntax profile, like vi's Ctrl-G"},
 	{"reload", "view", 0, 0, "re-open and re-index the file"},
 	{"redraw", "view", 0, 0, "force a full repaint"},
 	{"set", "view", 1, 2, "change a setting; with no value, toggle it"},

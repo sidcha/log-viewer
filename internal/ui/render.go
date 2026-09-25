@@ -446,6 +446,28 @@ func (a *App) stateText() string {
 		fmt.Fprintf(&b, " (%d%%)", clampPct((a.top+int64(a.rows))*100/n))
 	}
 
+	if flags := a.modeFlags(); len(flags) > 0 {
+		fmt.Fprintf(&b, "  [%s]", strings.Join(flags, " "))
+	}
+
+	if scanned, total := v.Progress(); !v.Done() && total > 0 {
+		what := "indexing"
+		if a.filtered() {
+			what = "filtering"
+		}
+		fmt.Fprintf(&b, "  %s %d%%", what, clampPct(scanned*100/total))
+	}
+	if err := a.idx.Err(); err != nil {
+		fmt.Fprintf(&b, "  read error: %v", err)
+	}
+	if pk := a.pendingKeys(); pk != "" {
+		fmt.Fprintf(&b, "   %s", pk)
+	}
+	return b.String()
+}
+
+// modeFlags names the modes that change what the screen shows.
+func (a *App) modeFlags() []string {
 	var flags []string
 	switch a.sel.mode {
 	case visualChar:
@@ -469,24 +491,7 @@ func (a *App) stateText() string {
 	if a.opts().Wrap {
 		flags = append(flags, "WRAP")
 	}
-	if len(flags) > 0 {
-		fmt.Fprintf(&b, "  [%s]", strings.Join(flags, " "))
-	}
-
-	if scanned, total := v.Progress(); !v.Done() && total > 0 {
-		what := "indexing"
-		if a.filtered() {
-			what = "filtering"
-		}
-		fmt.Fprintf(&b, "  %s %d%%", what, clampPct(scanned*100/total))
-	}
-	if err := a.idx.Err(); err != nil {
-		fmt.Fprintf(&b, "  read error: %v", err)
-	}
-	if pk := a.pendingKeys(); pk != "" {
-		fmt.Fprintf(&b, "   %s", pk)
-	}
-	return b.String()
+	return flags
 }
 
 // -------------------------------------------------------------------- helpers

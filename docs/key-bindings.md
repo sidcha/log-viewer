@@ -80,6 +80,7 @@ be rebound independently.
 |---|---|
 | `F` | follow the end of the file |
 | `zw` `zn` `zs` | wrap, line numbers, pin the status line |
+| `C-g` | file, position, size and syntax profile, like vi's |
 | `zr` | re-index |
 | `S` `zS` | save the current view / the rules to a file |
 | `:` | command line |

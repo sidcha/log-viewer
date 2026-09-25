@@ -244,6 +244,9 @@ func init() {
 			}
 			_ = a.cfg.Set("status-line", pin)
 		},
+		"file-info": func(a *App, c call) {
+			a.infof("%s", a.fileInfoText())
+		},
 		"set": func(a *App, c call) {
 			a.setOption(c.Args)
 		},
