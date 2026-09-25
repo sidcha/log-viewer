@@ -31,8 +31,9 @@ go install github.com/sidcha/log-viewer/cmd/lv@latest
 ```
 
 Or download a binary from the [releases page](https://github.com/sidcha/log-viewer/releases),
-run it with Nix (`nix run github:sidcha/log-viewer`), or build from source
-with `make build` (see [development](docs/development.md)).
+run it with `nix run github:sidcha/log-viewer` or add it to a Nix config
+(see [Nix](docs/nix.md)), or build from source with `make build` (see
+[development](docs/development.md)).
 
 ## Quick start
 
@@ -71,6 +72,7 @@ and how to change any of it.
 - [Configuration](docs/configuration.md) — settings, config files, colours
 - [Syntax highlighting](docs/highlighting.md) — log formats and your own profiles
 - [tmux, pipes and paging](docs/pager-and-tmux.md) — captures, `$PAGER`, tmux
+- [Nix](docs/nix.md) — the flake, its overlay, and adding lv to a NixOS or home-manager config
 - [Internals](docs/internals.md) — how it stays small, with measurements
 - [Development](docs/development.md) — building, testing and releasing
 

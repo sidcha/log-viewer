@@ -14,10 +14,9 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       version = "0.1.0";
-    in
-    {
-      packages = forAllSystems (pkgs: rec {
-        lv = pkgs.buildGoModule {
+      buildLv =
+        pkgs:
+        pkgs.buildGoModule {
           pname = "lv";
           inherit version;
           src = self;
@@ -36,6 +35,14 @@
             platforms = platforms.unix;
           };
         };
+    in
+    {
+      # nixpkgs already has an unrelated `lv`, so the overlay adds this one as
+      # `log-viewer` rather than replacing it.
+      overlays.default = final: _prev: { log-viewer = buildLv final; };
+
+      packages = forAllSystems (pkgs: rec {
+        lv = buildLv pkgs;
         default = lv;
       });
 
