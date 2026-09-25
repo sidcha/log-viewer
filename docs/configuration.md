@@ -111,6 +111,36 @@ specification or a pattern must be quoted: `bind '#' search-word-back`.
 Unknown settings, commands, styles and keys are errors at startup rather than
 silent no-ops. `lv --dump-config` prints the merged result, re-parseable as-is.
 
+## Status line
+
+The status line has two sides: `status-left` is drawn from the left edge and
+`status-right` against the right one. Each is text with `{field}` names in it:
+
+```
+set status-left  ' {file}  {flags}  {progress}  {error}  {keys}'
+set status-right '{profile}  {line}/{lines}  {percent} '
+```
+
+| field | shows |
+|---|---|
+| `file`, `path` | the file's name, or its whole path |
+| `line`, `lines` | the cursor's line and how many there are; `≥` while still counting |
+| `percent` | how far into the file the cursor is, by bytes |
+| `size` | the file's size |
+| `flags` | modes in force: `[FOLLOW FILTER×2 WRAP]` |
+| `progress` | a scan still running: `indexing 37%` |
+| `error` | a read error |
+| `keys` | a key sequence typed so far |
+| `profile` | the syntax profile of the region under the cursor, and why it was chosen |
+
+A field with nothing to show takes the spaces before it along, so an idle
+`{flags}` leaves no gap. `{{` writes a brace. An unknown field is an error when
+the setting is read.
+
+When the two sides do not fit, the right keeps at most half the row, losing
+text from its left so the edge stays put, and the left is cut short of it.
+`status-line` decides when the line is drawn at all; `zs` pins it.
+
 ## Terminal colours
 
 lv has to look right on a black terminal, a white one, and whatever gruvbox or

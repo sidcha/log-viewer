@@ -21,6 +21,8 @@ type Options struct {
 	LineNumbers      bool          `setting:"line-numbers"`
 	ANSI             bool          `setting:"ansi"`
 	StatusLine       string        `setting:"status-line"`
+	StatusLeft       string        `setting:"status-left"`
+	StatusRight      string        `setting:"status-right"`
 	AltScreen        bool          `setting:"alt-screen"`
 	QuitIfOneScreen  bool          `setting:"quit-if-one-screen"`
 	AskSave          string        `setting:"ask-save"`

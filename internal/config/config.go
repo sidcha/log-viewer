@@ -64,6 +64,8 @@ var Settings = []Setting{
 	{"line-numbers", kBool, "off", nil, Live, "show a source line-number gutter"},
 	{"ansi", kBool, "on", nil, Live, "draw the colours a log was captured with"},
 	{"status-line", kEnum, "auto", []string{"auto", "on", "off"}, Live, "when to draw the status line"},
+	{"status-left", kStr, " {file}  {flags}  {progress}  {error}  {keys}", nil, Live, "status line text drawn from the left edge; {field} names a value"},
+	{"status-right", kStr, "{profile}  {line}/{lines}  {percent} ", nil, Live, "status line text drawn against the right edge; {field} names a value"},
 	{"alt-screen", kBool, "on", nil, Startup, "draw on the alternate screen, restoring the terminal on exit"},
 	{"quit-if-one-screen", kBool, "off", nil, Startup, "print and exit when the whole input fits on the screen"},
 	{"ask-save", kEnum, "off", []string{"auto", "on", "off"}, Live, "ask before quitting whether to keep piped input: auto when it was followed"},
@@ -844,6 +846,12 @@ var positiveDurs = map[string]bool{
 	"detect-wait": true,
 }
 
+// statusTemplates lists the settings whose value is a status line template.
+var statusTemplates = map[string]bool{
+	"status-left":  true,
+	"status-right": true,
+}
+
 func validate(s *Setting, value string) error {
 	switch s.Kind {
 	case kBool:
@@ -869,6 +877,12 @@ func validate(s *Setting, value string) error {
 		}
 		if positiveDurs[s.Name] && d <= 0 {
 			return fmt.Errorf("%s: must be more than 0", s.Name)
+		}
+	case kStr:
+		if statusTemplates[s.Name] {
+			if _, err := ParseStatus(value); err != nil {
+				return fmt.Errorf("%s: %w", s.Name, err)
+			}
 		}
 	case kEnum:
 		for _, e := range s.Enum {

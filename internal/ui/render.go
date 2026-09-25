@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -407,17 +406,16 @@ func (a *App) drawStatus(row, w int) {
 		style = a.cfg.Style("status.busy")
 	}
 
-	var text string
 	switch {
 	case a.liveMsg():
-		style = a.msgStyle
-		text = a.msg
+		a.fillRow(row, a.msg, a.msgStyle)
 	case a.busy != nil:
-		text = a.busyText()
+		a.fillRow(row, a.busyText(), style)
 	default:
-		text = a.stateText()
+		c := a.readStatusCursor()
+		o := a.opts()
+		a.drawStatusSides(row, a.expandStatus(o.StatusLeft, c), a.expandStatus(o.StatusRight, c), style)
 	}
-	a.fillRow(row, text, style)
 }
 
 func (a *App) busyText() string {
@@ -428,42 +426,6 @@ func (a *App) busyText() string {
 		pct = fmt.Sprintf(" %d%%", clampPct(done*100/total))
 	}
 	return fmt.Sprintf(" %s%s … Esc to cancel", b.what, pct)
-}
-
-// stateText is the normal readout: where you are, and what is filtering or
-// indexing behind your back.
-func (a *App) stateText() string {
-	v := a.activeView()
-	n := v.Len()
-	pos := a.top + 1
-	if n == 0 {
-		pos = 0
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, " %s  %s/%s", filepath.Base(a.src.Name()), commas(pos), commas(n))
-	if n > 0 {
-		fmt.Fprintf(&b, " (%d%%)", clampPct((a.top+int64(a.rows))*100/n))
-	}
-
-	if flags := a.modeFlags(); len(flags) > 0 {
-		fmt.Fprintf(&b, "  [%s]", strings.Join(flags, " "))
-	}
-
-	if scanned, total := v.Progress(); !v.Done() && total > 0 {
-		what := "indexing"
-		if a.filtered() {
-			what = "filtering"
-		}
-		fmt.Fprintf(&b, "  %s %d%%", what, clampPct(scanned*100/total))
-	}
-	if err := a.idx.Err(); err != nil {
-		fmt.Fprintf(&b, "  read error: %v", err)
-	}
-	if pk := a.pendingKeys(); pk != "" {
-		fmt.Fprintf(&b, "   %s", pk)
-	}
-	return b.String()
 }
 
 // modeFlags names the modes that change what the screen shows.

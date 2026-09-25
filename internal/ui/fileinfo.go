@@ -55,8 +55,7 @@ func (a *App) fileInfoText() string {
 }
 
 // positionText places the cursor line, numbered num in the source and
-// starting at byte off, within the active view. The percentage is by bytes,
-// which is exact even while the line count is still being gathered.
+// starting at byte off, within the active view.
 func (a *App) positionText(num, off int64) string {
 	v := a.activeView()
 	total := commas(v.Len())
@@ -70,15 +69,9 @@ func (a *App) positionText(num, off int64) string {
 		head += " shown"
 		details = append(details, "source line "+commas(num))
 	}
-	if size := a.idx.Size(); size > 0 {
-		details = append(details, fmt.Sprintf("%d%%", clampPct(off*100/size)))
-	}
-	if scanned, total := v.Progress(); !v.Done() && total > 0 {
-		what := "indexing"
-		if a.filtered() {
-			what = "filtering"
-		}
-		details = append(details, fmt.Sprintf("%s %d%%", what, clampPct(scanned*100/total)))
+	details = append(details, fmt.Sprintf("%d%%", a.bytePercent(off)))
+	if p := a.progressText(v); p != "" {
+		details = append(details, p)
 	}
 	return fmt.Sprintf("%s (%s)", head, strings.Join(details, ", "))
 }
