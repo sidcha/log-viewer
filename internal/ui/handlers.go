@@ -298,7 +298,8 @@ func init() {
 			if a.search.m == nil {
 				return
 			}
-			a.search = searchState{cur: -1}
+			a.search = searchState{}
+			a.searchCur = -1
 			a.infof("search highlight cleared")
 		},
 

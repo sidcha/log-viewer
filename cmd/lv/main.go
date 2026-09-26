@@ -292,8 +292,9 @@ func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det 
 	scr.SetCursorStyle(tcell.CursorStyleSteadyBlock)
 	scr.Clear()
 
-	app := ui.New(scr, cfg, src, idx, prof)
+	app := ui.New(scr, cfg)
 	defer app.Close()
+	wake := app.AddBuffer(src, idx, prof)
 
 	w := newWatcher(cfg, src)
 	defer w.Close()
@@ -301,7 +302,7 @@ func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det 
 	// A nil *Detector in the interface would not be a nil Observer.
 	var obs index.Observer
 	if det != nil {
-		det.SetNotify(app.Wake)
+		det.SetNotify(wake)
 		defer det.Close()
 		obs = det
 	}
@@ -310,7 +311,7 @@ func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det 
 		Wake:     w.Events(),
 		Block:    o.BlockSize,
 		Advise:   o.PageCacheAdvise,
-		Notify:   app.Wake,
+		Notify:   wake,
 		Observer: obs,
 	})
 	ictx, icancel := context.WithCancel(ctx)

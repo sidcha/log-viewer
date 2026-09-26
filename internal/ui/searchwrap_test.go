@@ -103,7 +103,7 @@ func TestSearchWrapsAtTheEnd(t *testing.T) {
 
 	last := a.base.Len() - 1
 	a.setCursor(last)
-	a.search.cur = last // walked down past the last match
+	a.searchCur = last // walked down past the last match
 	a.draw()
 	if got := a.anchorSource() + 1; got != last+1 {
 		t.Fatalf("setup put the cursor on line %d, want %d", got, last+1)
@@ -126,7 +126,7 @@ func TestSearchWrapsAtTheStart(t *testing.T) {
 	waitSearch(t, a)
 
 	a.setCursor(0)
-	a.search.cur = 0
+	a.searchCur = 0
 	a.draw()
 
 	run(a, "search-prev")

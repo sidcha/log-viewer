@@ -22,9 +22,6 @@ import (
 	"github.com/sidcha/log-viewer/internal/color"
 	"github.com/sidcha/log-viewer/internal/config"
 	"github.com/sidcha/log-viewer/internal/filter"
-	"github.com/sidcha/log-viewer/internal/highlight"
-	"github.com/sidcha/log-viewer/internal/index"
-	"github.com/sidcha/log-viewer/internal/source"
 	"github.com/sidcha/log-viewer/internal/view"
 )
 
@@ -41,27 +38,14 @@ type busyOp struct {
 type App struct {
 	scr tcell.Screen
 	cfg *config.Config
-	src *source.Source
-	idx *index.Index
 
-	base *view.Base
-	filt *view.Filtered
-	// filtPtr mirrors filt for goroutines other than the event loop.
-	filtPtr atomic.Pointer[view.Filtered]
-	rules   *filter.Set
-	gen     int // bumped whenever the active view is replaced
+	// buffer is the file on screen; its fields read as the App's own.
+	*buffer
+	bufs []*buffer
+	// shown mirrors buffer for the indexers' goroutines.
+	shown atomic.Pointer[buffer]
 
-	eng *highlight.Engine
 	lay *layout
-
-	top     int64
-	cur     int64 // cursor line, in view coordinates
-	curCol  int   // cursor byte offset within that line
-	wantCol int   // column to return to after moving between lines
-	sel     selection
-	hoff    int
-	follow  bool
-	bypass  bool
 
 	// opt is the settings, resolved; read it through opts, which refreshes it
 	// whenever the configuration has changed since.
@@ -75,21 +59,6 @@ type App struct {
 	ov      *overlay
 	confirm *confirm
 	busy    *busyOp
-
-	// Where the rules came from, and what they looked like when last written,
-	// so quitting knows whether there is anything to lose.
-	rulesPath   string
-	savedDigest string
-	// streamSaved records that piped input has been written somewhere that
-	// outlives the process, and everFollowed that this session was watching
-	// the input arrive rather than reading through it.
-	streamSaved  bool
-	everFollowed bool
-
-	// A position request that cannot be honoured until the filter scan has
-	// reached the relevant part of the file.
-	pendingAnchor int64
-	havePending   bool
 
 	msg      string
 	msgStyle tcell.Style
@@ -117,10 +86,8 @@ type App struct {
 	curX int
 	curY int
 
-	lastLen  int64
-	lastScan int64
-	lastAct  time.Time
-	freed    bool
+	lastAct time.Time
+	freed   bool
 
 	// half-typed key sequence and numeric count
 	pending []config.Key
@@ -139,40 +106,21 @@ type searchState struct {
 	m    filter.Matcher
 	pat  string
 	back bool
-	cur  int64
 }
 
-// New builds an App. The caller owns the screen's lifetime.
-func New(scr tcell.Screen, cfg *config.Config, src *source.Source, idx *index.Index, prof highlight.Profiler) *App {
-	opt := cfg.Options()
-
+// New builds an App with no files; AddBuffer opens them. The caller owns the
+// screen's lifetime.
+func New(scr tcell.Screen, cfg *config.Config) *App {
 	a := &App{
-		scr:   scr,
-		cfg:   cfg,
-		src:   src,
-		idx:   idx,
-		base:  view.NewBase(src, idx, opt.BlockSize, opt.MaxLineBytes),
-		rules: filter.NewSet(),
-		eng:   highlight.NewEngine(opt.MaxScanBytes, opt.MaxHighlights),
-		lay:   newLayout(opt.TabWidth),
-		// Following is where the session starts, not a setting it tracks:
-		// scrolling away turns it off, and a later :set must not undo that.
-		follow:       opt.Follow,
-		everFollowed: opt.Follow,
-		post:         make(chan func(), 32),
-		wake:         make(chan struct{}, 1),
-		done:         make(chan struct{}),
-		lastAct:      time.Now(),
+		scr:     scr,
+		cfg:     cfg,
+		lay:     newLayout(cfg.Options().TabWidth),
+		post:    make(chan func(), 32),
+		wake:    make(chan struct{}, 1),
+		done:    make(chan struct{}),
+		lastAct: time.Now(),
 	}
-	a.eng.Profiles = prof
-	a.search.cur = -1
 	a.reconfigure()
-
-	set := a.rules
-	for _, p := range cfg.Presets() {
-		set = set.Add(filter.Rule{Action: p.Action, M: p.M, Enabled: true, Color: p.Color})
-	}
-	a.applyRules(set, false)
 	return a
 }
 
@@ -194,10 +142,6 @@ func (a *App) reconfigure() {
 	o := &a.opt
 
 	a.lay.setTab(o.TabWidth)
-	if (a.eng.MaxScan != o.MaxScanBytes || a.eng.MaxMatches != o.MaxHighlights) && o.MaxScanBytes > 0 && o.MaxHighlights > 0 {
-		a.eng.MaxScan, a.eng.MaxMatches = o.MaxScanBytes, o.MaxHighlights
-		a.eng.Forget()
-	}
 	if o.Mouse != a.mouseOn {
 		if o.Mouse {
 			a.scr.EnableMouse(tcell.MouseButtonEvents)
@@ -206,23 +150,30 @@ func (a *App) reconfigure() {
 		}
 		a.mouseOn = o.Mouse
 	}
-	if o.Wrap {
-		a.hoff = 0
+	for _, b := range a.bufs {
+		if (b.eng.MaxScan != o.MaxScanBytes || b.eng.MaxMatches != o.MaxHighlights) && o.MaxScanBytes > 0 && o.MaxHighlights > 0 {
+			b.eng.MaxScan, b.eng.MaxMatches = o.MaxScanBytes, o.MaxHighlights
+			b.eng.Forget()
+		}
+		if o.Wrap {
+			b.hoff = 0
+		}
 	}
 }
 
-// Wake asks the event loop to repaint, and tells any filter scan that more of
-// the file has arrived. It is safe to call from any goroutine and never blocks.
-//
-// The filtered view is reached through an atomic pointer because this runs on
-// the indexer's goroutine while the UI goroutine owns the field itself.
-func (a *App) Wake() {
-	if f := a.filtPtr.Load(); f != nil {
-		f.Nudge()
-	}
+// requestFrame asks the event loop to repaint. It never blocks.
+func (a *App) requestFrame() {
 	select {
 	case a.wake <- struct{}{}:
 	default:
+	}
+}
+
+// Wake asks for a repaint on behalf of work done for the buffer on screen.
+// It is safe to call from any goroutine.
+func (a *App) Wake() {
+	if b := a.shown.Load(); b != nil {
+		b.wake()
 	}
 }
 
@@ -552,13 +503,11 @@ func (a *App) cancelBusy() {
 	}
 }
 
-// Close releases the filtered view's scan goroutine.
+// Close releases every buffer's filter scan.
 func (a *App) Close() {
 	a.cancelBusy()
-	if a.filt != nil {
-		a.filt.Close()
-		a.filt = nil
-		a.filtPtr.Store(nil)
+	for _, b := range a.bufs {
+		b.close()
 	}
 }
 

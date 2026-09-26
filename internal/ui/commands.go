@@ -150,7 +150,8 @@ func (a *App) cancel() {
 	case a.ov != nil:
 		a.ov = nil
 	case a.search.m != nil:
-		a.search = searchState{cur: -1}
+		a.search = searchState{}
+		a.searchCur = -1
 	default:
 		a.clearMsg()
 	}
@@ -160,7 +161,7 @@ func (a *App) reload() {
 	a.cancelBusy()
 	a.idx.Reset()
 	a.top = 0
-	a.search.cur = -1
+	a.searchCur = -1
 	a.infof("re-indexing %s", filepath.Base(a.src.Name()))
 }
 
@@ -224,7 +225,7 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 	}
 	a.bypass = false
 	a.gen++
-	a.search.cur = -1
+	a.searchCur = -1
 	a.top = 0
 
 	if next.Filtering() {
@@ -234,7 +235,7 @@ func (a *App) applyRules(next *filter.Set, preserve bool) {
 			Poll:            a.opts().ScanPoll,
 			Advise:          a.opts().PageCacheAdvise,
 			CheckpointBytes: int64(a.opts().FilterCkBytes),
-			Notify:          a.Wake,
+			Notify:          a.buffer.wake,
 			Narrowing:       narrowing,
 		})
 		a.filtPtr.Store(a.filt)
@@ -314,7 +315,8 @@ func (a *App) doSearchAt(pattern string, mode filter.Mode, back bool, num int64)
 		a.errorf("bad pattern: %v", err)
 		return
 	}
-	a.search = searchState{m: m, pat: pattern, back: back, cur: -1}
+	a.search = searchState{m: m, pat: pattern, back: back}
+	a.searchCur = -1
 	if num > 0 {
 		a.gotoSourceLine(num)
 		return
@@ -331,7 +333,8 @@ func (a *App) doSearchMode(pattern string, mode filter.Mode, back bool) {
 		a.errorf("bad pattern: %v", err)
 		return
 	}
-	a.search = searchState{m: m, pat: pattern, back: back, cur: -1}
+	a.search = searchState{m: m, pat: pattern, back: back}
+	a.searchCur = -1
 
 	from := a.top
 	if back {
@@ -350,7 +353,7 @@ func (a *App) searchStep(reverse bool) {
 	}
 	back := a.search.back != reverse
 
-	from := a.search.cur
+	from := a.searchCur
 	if from < 0 {
 		from = a.top
 	}
@@ -387,7 +390,7 @@ func (a *App) searchFrom(from int64, back, wrapped bool) {
 	a.busy = op
 
 	v := a.activeView()
-	gen := a.gen
+	b, gen := a.buffer, a.gen
 	m := a.search.m
 	pat := a.search.pat
 
@@ -401,8 +404,8 @@ func (a *App) searchFrom(from int64, back, wrapped bool) {
 			if a.busy == op {
 				a.busy = nil
 			}
-			if gen != a.gen {
-				return // the view was replaced while we searched
+			if a.buffer != b || gen != b.gen {
+				return // the view was replaced, or another file is on screen
 			}
 			switch {
 			case ctx.Err() != nil:
@@ -414,7 +417,7 @@ func (a *App) searchFrom(from int64, back, wrapped bool) {
 			case !found:
 				a.infof("pattern not found: %s", pat)
 			default:
-				a.search.cur = hit
+				b.searchCur = hit
 				a.reveal(hit)
 			}
 		})
@@ -454,7 +457,8 @@ func (a *App) startSaveView(v view.View, path string, then func()) {
 	a.busy = op
 
 	whole := v == view.View(a.base)
-	src := a.src
+	b := a.buffer
+	src := b.src
 
 	go func() {
 		p, err := export.Save(ctx, src, v, path, func(pr export.Progress) {
@@ -475,7 +479,7 @@ func (a *App) startSaveView(v view.View, path string, then func()) {
 				if whole {
 					// Everything that was read is now somewhere that outlives
 					// this process, so quitting has nothing left to warn about.
-					a.streamSaved = true
+					b.streamSaved = true
 				}
 				a.infof("wrote %s lines (%s) to %s", commas(p.Lines), humanBytes(p.Bytes), path)
 				if then != nil {

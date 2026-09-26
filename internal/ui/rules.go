@@ -18,13 +18,7 @@ func (a *App) currentRuleFile() *ruleset.File {
 
 // rulesDirty reports whether there is anything worth saving that is not already
 // on disk.
-func (a *App) rulesDirty() bool {
-	f := a.currentRuleFile()
-	if f.Empty() {
-		return false
-	}
-	return f.Digest() != a.savedDigest
-}
+func (a *App) rulesDirty() bool { return a.hasUnsavedRules(a.opts().Case) }
 
 // LoadRules reads a rules file and installs it.
 func (a *App) LoadRules(path string) error {

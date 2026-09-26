@@ -224,7 +224,7 @@ func (a *App) applyStyles(text []byte, idx, off int64, base tcell.Style) {
 
 	if a.search.m != nil {
 		st := a.cfg.Style("match")
-		if idx == a.search.cur {
+		if idx == a.searchCur {
 			st = a.cfg.Style("match.current")
 		}
 		a.paint(a.search.m, text, st, n)

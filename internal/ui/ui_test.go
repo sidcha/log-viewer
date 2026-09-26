@@ -107,7 +107,8 @@ func newAppOverConf(t *testing.T, src *source.Source, path, conf string, setting
 	scr.SetSize(testW, testH)
 	t.Cleanup(scr.Fini)
 
-	app := New(scr, cfg, src, idx, det.Segments())
+	app := New(scr, cfg)
+	app.AddBuffer(src, idx, det.Segments())
 	t.Cleanup(app.Close)
 	return app, scr, ixr
 }
