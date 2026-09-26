@@ -311,6 +311,25 @@ func TestEscapeLeavesVisual(t *testing.T) {
 	}
 }
 
+// TestQInVisualEndsTheSelection: q while selecting used to fall through to
+// normal mode's quit and end the session instead of the selection.
+func TestQInVisualEndsTheSelection(t *testing.T) {
+	a, _ := newTestApp(t, numbered(50))
+
+	keys(a, "vjq")
+	if a.quit {
+		t.Fatal("q in visual mode quit lv")
+	}
+	if a.visualActive() {
+		t.Error("q in visual mode left the selection active")
+	}
+
+	keys(a, "q")
+	if !a.quit {
+		t.Error("q outside visual mode no longer quits")
+	}
+}
+
 func TestYankLinesToClipboardCommand(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
 

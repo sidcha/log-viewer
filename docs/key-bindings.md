@@ -47,7 +47,7 @@ screen, so the next word is on the next *visible* line.
 | `v` `V` | character-wise / line-wise selection |
 | `y` | copy the selection (while selecting) |
 | `yy` | copy the current line; `3yy` for three |
-| `Esc` | leave visual mode |
+| `Esc` `q` | leave visual mode |
 
 Copying uses the terminal's own clipboard escape, so it works over ssh and
 inside a container where there is no X display or Wayland socket to reach. If
