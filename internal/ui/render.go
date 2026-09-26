@@ -56,12 +56,15 @@ func (a *App) draw() {
 	gw := a.gutterWidth()
 
 	row := 0
+	a.screenBytes = byteCensus{}
+	scanLimit := a.opts().MaxScanBytes
 	for i := a.top; row < rows && i < n; i++ {
 		ln, err := v.At(i, a.linebuf[:0])
 		if err != nil {
 			break
 		}
 		a.linebuf = ln.Text // keep the grown buffer for the next line
+		a.screenBytes.add(ln.Text, scanLimit)
 		row += a.drawLine(row, rows-row, gw, i, ln, base)
 	}
 	for ; row < rows; row++ {

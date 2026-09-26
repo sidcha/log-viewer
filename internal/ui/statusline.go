@@ -71,6 +71,7 @@ var statusFields = map[string]func(a *App, c *statusCursor) string{
 		}
 		return a.eng.Profiles.Describe(c.ln.Off)
 	},
+	"encoding": func(a *App, c *statusCursor) string { return a.screenBytes.encoding() },
 }
 
 // bytePercent is how far into the file off lies. It is exact even while the

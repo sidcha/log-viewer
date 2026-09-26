@@ -118,7 +118,7 @@ The status line has two sides: `status-left` is drawn from the left edge and
 
 ```
 set status-left  ' {file}  {flags}  {progress}  {error}  {keys}'
-set status-right '{profile}  {line}/{lines}  {percent} '
+set status-right '{profile}  {encoding}  {line}/{lines}  {percent} '
 ```
 
 | field | shows |
@@ -132,6 +132,7 @@ set status-right '{profile}  {line}/{lines}  {percent} '
 | `error` | a read error |
 | `keys` | a key sequence typed so far |
 | `profile` | the syntax profile of the region under the cursor, and why it was chosen |
+| `encoding` | `utf-8`, or `binary` when NULs or more than one byte in ten on screen are not text |
 
 A field with nothing to show takes the spaces before it along, so an idle
 `{flags}` leaves no gap. `{{` writes a brace. An unknown field is an error when

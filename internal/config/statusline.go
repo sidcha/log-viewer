@@ -10,7 +10,7 @@ import (
 // in braces. The viewer draws each; a test keeps the two lists agreeing.
 var StatusFields = []string{
 	"file", "path", "line", "lines", "percent", "size",
-	"flags", "progress", "error", "keys", "profile",
+	"flags", "progress", "error", "keys", "profile", "encoding",
 }
 
 // IsStatusField reports whether name may appear in a status template.

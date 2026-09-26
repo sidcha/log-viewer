@@ -102,6 +102,9 @@ type App struct {
 
 	// frame scratch, reused to keep drawing allocation-free
 	linebuf []byte
+	// screenBytes is what the lines drawn this frame are made of, for the
+	// encoding status field.
+	screenBytes byteCensus
 	// walkbuf belongs to the word motions, which read lines other than the
 	// one being drawn.
 	walkbuf   []byte
