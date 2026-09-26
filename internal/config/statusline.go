@@ -9,7 +9,7 @@ import (
 // StatusFields are the names a status-left or status-right template may use
 // in braces. The viewer draws each; a test keeps the two lists agreeing.
 var StatusFields = []string{
-	"file", "path", "line", "lines", "percent", "size",
+	"buffer", "file", "path", "line", "lines", "percent", "size",
 	"flags", "progress", "error", "keys", "profile", "encoding",
 }
 

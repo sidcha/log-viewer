@@ -30,8 +30,9 @@ func (a *App) readStatusCursor() *statusCursor {
 // statusFields draws each field config.StatusFields names. A field with
 // nothing to report returns "".
 var statusFields = map[string]func(a *App, c *statusCursor) string{
-	"file": func(a *App, c *statusCursor) string { return filepath.Base(a.src.Name()) },
-	"path": func(a *App, c *statusCursor) string { return a.src.Name() },
+	"buffer": func(a *App, c *statusCursor) string { return a.bufferTag() },
+	"file":   func(a *App, c *statusCursor) string { return filepath.Base(a.src.Name()) },
+	"path":   func(a *App, c *statusCursor) string { return a.src.Name() },
 	"line": func(a *App, c *statusCursor) string {
 		if c.v.Len() == 0 {
 			return "0"

@@ -116,3 +116,21 @@ func TestStatusMessageReplacesBothSides(t *testing.T) {
 		t.Errorf("row = %q", got)
 	}
 }
+
+func TestBufferFieldOnlyAppearsWithSeveralFiles(t *testing.T) {
+	a, scr := newTestAppWith(t, numbered(50), "status-line", "on")
+	a.draw()
+	if strings.Contains(rowText(scr, testH-1), "[1/") {
+		t.Errorf("one file is tagged: %q", rowText(scr, testH-1))
+	}
+	if strings.HasPrefix(rowText(scr, testH-1), "  ") {
+		t.Errorf("the empty field left a gap: %q", rowText(scr, testH-1))
+	}
+
+	addTestBuffer(t, a, "b.log", numbered(50))
+	a.clearMsg()
+	a.draw()
+	if !strings.Contains(rowText(scr, testH-1), "[2/2] b.log") {
+		t.Errorf("status line is %q, want the tag before the file", rowText(scr, testH-1))
+	}
+}

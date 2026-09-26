@@ -117,12 +117,13 @@ The status line has two sides: `status-left` is drawn from the left edge and
 `status-right` against the right one. Each is text with `{field}` names in it:
 
 ```
-set status-left  ' {file}  {flags}  {progress}  {error}  {keys}'
+set status-left  ' {buffer} {file}  {flags}  {progress}  {error}  {keys}'
 set status-right '{profile}  {encoding}  {line}/{lines}  {percent} '
 ```
 
 | field | shows |
 |---|---|
+| `buffer` | which of several open files this is: `[2/3]`; empty with one |
 | `file`, `path` | the file's name, or its whole path |
 | `line`, `lines` | the cursor's line and how many there are; `≥` while still counting |
 | `percent` | how far into the file the cursor is, by bytes |

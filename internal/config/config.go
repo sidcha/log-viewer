@@ -64,7 +64,7 @@ var Settings = []Setting{
 	{"line-numbers", kBool, "off", nil, Live, "show a source line-number gutter"},
 	{"ansi", kBool, "on", nil, Live, "draw the colours a log was captured with"},
 	{"status-line", kEnum, "auto", []string{"auto", "on", "off"}, Live, "when to draw the status line"},
-	{"status-left", kStr, " {file}  {flags}  {progress}  {error}  {keys}", nil, Live, "status line text drawn from the left edge; {field} names a value"},
+	{"status-left", kStr, " {buffer} {file}  {flags}  {progress}  {error}  {keys}", nil, Live, "status line text drawn from the left edge; {field} names a value"},
 	{"status-right", kStr, "{profile}  {encoding}  {line}/{lines}  {percent} ", nil, Live, "status line text drawn against the right edge; {field} names a value"},
 	{"alt-screen", kBool, "on", nil, Startup, "draw on the alternate screen, restoring the terminal on exit"},
 	{"quit-if-one-screen", kBool, "off", nil, Startup, "print and exit when the whole input fits on the screen"},
