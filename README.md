@@ -44,6 +44,7 @@ journalctl -f | lv -f           # follow a pipe
 git log | lv                    # use it as a pager
 lv -o ERROR -N healthcheck app.log   # only ERROR lines, never healthcheck
 lv -r incident.json app.log     # reuse rules saved earlier
+lv -r api.rules api.log worker.log    # several files; ] and [ switch
 ```
 
 Inside `lv`:

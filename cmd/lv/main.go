@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -40,11 +41,7 @@ type options struct {
 	wrap       bool
 	lineNums   bool
 	profile    string
-	only       stringList
-	never      stringList
-	mark       stringList
 	sets       stringList
-	rulesPath  string
 	background string
 	dumpConfig bool
 	listProf   bool
@@ -71,33 +68,12 @@ func run() int {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usage
 
-	fs.StringVar(&opt.configPath, "c", "", "path to a configuration file")
-	fs.StringVar(&opt.configPath, "config", "", "path to a configuration file")
-	fs.BoolVar(&opt.noConfig, "no-config", false, "ignore user configuration")
-	fs.BoolVar(&opt.follow, "f", false, "start in follow mode")
-	fs.BoolVar(&opt.follow, "follow", false, "start in follow mode")
-	fs.BoolVar(&opt.wrap, "w", false, "wrap long lines")
-	fs.BoolVar(&opt.wrap, "wrap", false, "wrap long lines")
-	fs.BoolVar(&opt.lineNums, "n", false, "show line numbers")
-	fs.BoolVar(&opt.lineNums, "line-numbers", false, "show line numbers")
-	fs.StringVar(&opt.profile, "p", "", "syntax profile to use instead of detecting one")
-	fs.StringVar(&opt.profile, "profile", "", "syntax profile to use instead of detecting one")
-	fs.Var(&opt.only, "o", "show only lines matching this pattern (repeatable)")
-	fs.Var(&opt.only, "only", "show only lines matching this pattern (repeatable)")
-	fs.Var(&opt.never, "N", "never show lines matching this pattern (repeatable)")
-	fs.Var(&opt.never, "never", "never show lines matching this pattern (repeatable)")
-	fs.Var(&opt.mark, "H", "highlight this pattern (repeatable)")
-	fs.Var(&opt.mark, "highlight", "highlight this pattern (repeatable)")
-	fs.StringVar(&opt.background, "background", "", "terminal background: auto, dark or light")
-	fs.Var(&opt.sets, "set", "override a setting, name=value (repeatable)")
-	fs.StringVar(&opt.rulesPath, "r", "", "load rules from a file saved earlier")
-	fs.StringVar(&opt.rulesPath, "rules", "", "load rules from a file saved earlier")
-	fs.BoolVar(&opt.dumpConfig, "dump-config", false, "print the effective configuration and exit")
-	fs.BoolVar(&opt.listProf, "list-profiles", false, "list syntax profiles and exit")
-	fs.BoolVar(&opt.showVer, "V", false, "print version and exit")
-	fs.BoolVar(&opt.showVer, "version", false, "print version and exit")
-
-	if err := fs.Parse(os.Args[1:]); err != nil {
+	files, err := parseArgs(fs, &opt, os.Args[1:])
+	if err != nil {
+		// flag has already printed its own complaint and the usage.
+		if !errors.Is(err, errFlagReported) {
+			fmt.Fprintf(os.Stderr, "lv: %v\n", err)
+		}
 		return 2
 	}
 	if opt.showVer {
@@ -143,56 +119,100 @@ func run() int {
 		return 0
 	}
 
-	src, err := openSource(fs.Args())
+	// Open and validate everything before touching the terminal, so a bad
+	// path, profile or rules file is an ordinary error message rather than
+	// one flashed after an alternate screen has already been entered.
+	ins, err := openInputs(cfg, files, opt.profile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
-	defer src.Close()
+	defer func() {
+		for _, in := range ins {
+			in.close()
+		}
+	}()
 
 	// Piped input opens at the top, the way every pager does, so lv can be
 	// one: `git config core.pager lv`, MANPAGER, anything that pipes. Landing
 	// at the end of `git log` shows the oldest commit first, which is not what
 	// anyone asked for. Tailing a stream is what -f is for.
-	if src.IsStdin() {
+	if len(ins) == 1 && ins[0].src.IsStdin() {
 		applyPagerDefaults(cfg)
-	}
-
-	prof, det, err := newProfiler(cfg, src, opt.profile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
-		return 1
-	}
-
-	// Read the rules before touching the terminal, so a bad path is an
-	// ordinary error message rather than one flashed after an alternate
-	// screen has already been entered.
-	var rules *ruleset.File
-	if opt.rulesPath != "" {
-		rules, err = ruleset.Load(opt.rulesPath)
-		if err == nil {
-			// Compile the patterns now as well, so a bad action or an
-			// unbalanced bracket is reported here rather than once the
-			// alternate screen is already up.
-			_, _, err = rules.Set(cfg.Case())
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "lv: %v\n", err)
-			return 1
-		}
 	}
 
 	// Keep the heap tight: this is a viewer for files far larger than RAM, so
 	// trading a little CPU for a smaller resident set is the right default.
 	debug.SetGCPercent(50)
 
-	err = serve(cfg, src, prof, det, rules, &opt)
-	stopProducer(cfg, src)
+	err = serve(cfg, ins)
+	for _, in := range ins {
+		stopProducer(cfg, in.src)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lv: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// input is one file, opened and ready to view.
+type input struct {
+	spec  fileSpec
+	src   *source.Source
+	prof  highlight.Profiler
+	det   *highlight.Detector
+	rules *ruleset.File
+}
+
+func (in *input) close() {
+	if in.det != nil {
+		in.det.Close()
+	}
+	in.src.Close()
+}
+
+// openInputs opens every file named on the command line and prepares its
+// syntax profile and rules. On failure it closes whatever it already opened.
+//
+// The errors read as they did when lv took one file: an open or a rules load
+// already names its path, and the profile is one for the whole session. Only
+// a bad rule says nothing of where it came from, and needs saying so when
+// there is more than one rules file it could be in.
+func openInputs(cfg *config.Config, files []fileSpec, forced string) ([]*input, error) {
+	var ins []*input
+	fail := func(err error) ([]*input, error) {
+		for _, in := range ins {
+			in.close()
+		}
+		return nil, err
+	}
+	for _, spec := range files {
+		src, err := openSource(spec.path)
+		if err != nil {
+			return fail(err)
+		}
+		in := &input{spec: spec, src: src}
+		ins = append(ins, in)
+		if in.prof, in.det, err = newProfiler(cfg, src, forced); err != nil {
+			return fail(err)
+		}
+		if spec.rules != "" {
+			if in.rules, err = ruleset.Load(spec.rules); err != nil {
+				return fail(err)
+			}
+			// Compile the patterns now as well, so a bad action or an
+			// unbalanced bracket is reported here rather than once the
+			// alternate screen is already up.
+			if _, _, err = in.rules.Set(cfg.Case()); err != nil {
+				if len(files) > 1 {
+					err = fmt.Errorf("%s: %w", spec.rules, err)
+				}
+				return fail(err)
+			}
+		}
+	}
+	return ins, nil
 }
 
 // stopProducer ends the process piping into lv once the viewer has gone.
@@ -262,15 +282,14 @@ func deriveStyles(cfg *config.Config, term termcolor.Colors) {
 		Background(color.Blend(bg, fg, float64(cfg.Options().CursorLineTint)/100).Tcell()))
 }
 
-func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det *highlight.Detector, rules *ruleset.File, opt *options) error {
+func serve(cfg *config.Config, ins []*input) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
 	o := cfg.Options()
-	idx := index.New(int64(o.IndexStride), o.MaxCheckpoints)
 
-	if o.QuitIfOneScreen {
-		if done, err := dumpIfItFits(cfg, src); done || err != nil {
+	if o.QuitIfOneScreen && len(ins) == 1 {
+		if done, err := dumpIfItFits(cfg, ins[0].src); done || err != nil {
 			return err
 		}
 	}
@@ -294,38 +313,40 @@ func serve(cfg *config.Config, src *source.Source, prof highlight.Profiler, det 
 
 	app := ui.New(scr, cfg)
 	defer app.Close()
-	wake := app.AddBuffer(src, idx, prof)
 
-	w := newWatcher(cfg, src)
-	defer w.Close()
-
-	// A nil *Detector in the interface would not be a nil Observer.
-	var obs index.Observer
-	if det != nil {
-		det.SetNotify(wake)
-		defer det.Close()
-		obs = det
-	}
-
-	ixr := index.NewIndexer(src, idx, index.Options{
-		Wake:     w.Events(),
-		Block:    o.BlockSize,
-		Advise:   o.PageCacheAdvise,
-		Notify:   wake,
-		Observer: obs,
-	})
 	ictx, icancel := context.WithCancel(ctx)
 	defer icancel()
-	go ixr.Run(ictx)
+	for _, in := range ins {
+		idx := index.New(int64(o.IndexStride), o.MaxCheckpoints)
+		wake := app.AddBuffer(in.src, idx, in.prof)
+		w := newWatcher(cfg, in.src)
+		defer w.Close()
 
-	// The file comes first so patterns given on the command line add to it
-	// rather than being replaced by it.
-	if err := app.ApplyRuleFile(rules, opt.rulesPath); err != nil {
-		return err
+		// A nil *Detector in the interface would not be a nil Observer.
+		var obs index.Observer
+		if in.det != nil {
+			in.det.SetNotify(wake)
+			obs = in.det
+		}
+		ixr := index.NewIndexer(in.src, idx, index.Options{
+			Wake:     w.Events(),
+			Block:    o.BlockSize,
+			Advise:   o.PageCacheAdvise,
+			Notify:   wake,
+			Observer: obs,
+		})
+		go ixr.Run(ictx)
+
+		// The file comes first so patterns given on the command line add to
+		// it rather than being replaced by it.
+		if err := app.ApplyRuleFile(in.rules, in.spec.rules); err != nil {
+			return fmt.Errorf("%s: %w", in.spec.rules, err)
+		}
+		if err := app.ApplyStartup(in.spec.only, in.spec.never, in.spec.mark); err != nil {
+			return fmt.Errorf("%s: %w", in.spec.path, err)
+		}
 	}
-	if err := app.ApplyStartup(opt.only, opt.never, opt.mark); err != nil {
-		return err
-	}
+	app.ShowFirst()
 	return app.Run(ctx)
 }
 
@@ -366,21 +387,15 @@ func newScreen() (tcell.Screen, error) {
 	return tcell.NewScreen()
 }
 
-func openSource(args []string) (*source.Source, error) {
-	switch {
-	case len(args) > 1:
-		return nil, fmt.Errorf("expected at most one file, got %d", len(args))
-
-	case len(args) == 1 && args[0] != "-":
-		return source.Open(args[0])
-
-	default:
-		fi, err := os.Stdin.Stat()
-		if err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-			return nil, fmt.Errorf("no input: give a file, or pipe one in")
-		}
-		return source.FromStdin()
+func openSource(path string) (*source.Source, error) {
+	if path != "-" {
+		return source.Open(path)
 	}
+	fi, err := os.Stdin.Stat()
+	if err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		return nil, fmt.Errorf("no input: give a file, or pipe one in")
+	}
+	return source.FromStdin()
 }
 
 // applyPagerDefaults adjusts the settings that should differ when lv is
@@ -454,7 +469,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `lv - log viewer for files larger than memory
 
 usage:
-  lv [options] <file>
+  lv [options] [[file options] <file>]...
   <producer> | lv [options]
   lv config ...              read and write configuration
 
@@ -465,10 +480,10 @@ options:
   -w, --wrap             wrap long lines
   -n, --line-numbers     show a line-number gutter
   -p, --profile NAME     force a syntax profile ("none" disables highlighting)
-  -o, --only PATTERN     show only matching lines (repeatable)
-  -N, --never PATTERN    never show matching lines (repeatable)
-  -H, --highlight PAT    mark a pattern without filtering (repeatable)
-  -r, --rules PATH       load rules saved from an earlier session
+  -o, --only PATTERN     for the next file: show only matching lines (repeatable)
+  -N, --never PATTERN    for the next file: never show matching lines (repeatable)
+  -H, --highlight PAT    for the next file: mark a pattern without filtering (repeatable)
+  -r, --rules PATH       for the next file: load rules saved from an earlier session
       --background MODE  auto, dark or light; auto asks the terminal
       --set NAME=VALUE   override one setting (repeatable)
       --dump-config      print the effective configuration and exit

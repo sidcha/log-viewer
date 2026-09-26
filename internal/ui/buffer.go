@@ -1,12 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"github.com/sidcha/log-viewer/internal/filter"
 	"github.com/sidcha/log-viewer/internal/highlight"
 	"github.com/sidcha/log-viewer/internal/index"
-	"github.com/sidcha/log-viewer/internal/ruleset"
 	"github.com/sidcha/log-viewer/internal/source"
 	"github.com/sidcha/log-viewer/internal/view"
 )
@@ -46,6 +46,10 @@ type buffer struct {
 	// so quitting knows whether there is anything to lose.
 	rulesPath   string
 	savedDigest string
+	// rulesCase is the case the rules are saved under. It is the session's
+	// setting as of when they were loaded, saved or changed with :set here,
+	// so another file's rules setting it does not change what these mean.
+	rulesCase filter.Case
 	// streamSaved records that piped input has been written somewhere that
 	// outlives the process, and everFollowed that this session was watching
 	// the input arrive rather than reading through it.
@@ -73,8 +77,8 @@ func (b *buffer) wake() {
 	}
 }
 
-func (b *buffer) hasUnsavedRules(cs filter.Case) bool {
-	f := ruleset.From(b.rules, cs)
+func (b *buffer) hasUnsavedRules() bool {
+	f := b.currentRuleFile()
 	return !f.Empty() && f.Digest() != b.savedDigest
 }
 
@@ -103,6 +107,7 @@ func (a *App) AddBuffer(src *source.Source, idx *index.Index, prof highlight.Pro
 		follow:       opt.Follow,
 		everFollowed: opt.Follow,
 		searchCur:    -1,
+		rulesCase:    opt.Case,
 	}
 	b.eng.Profiles = prof
 	a.bufs = append(a.bufs, b)
@@ -133,4 +138,47 @@ func (a *App) bufferIndex() int {
 		}
 	}
 	return -1
+}
+
+// ShowFirst puts the first file on screen, where a session starts.
+func (a *App) ShowFirst() { a.showBuffer(0) }
+
+// switchBuffer puts buffer i on screen and says which file it is, the way
+// Ctrl-G does. A background operation belongs to the file it started in, so
+// it has to finish or be cancelled first, and the match window's background
+// scan reads whichever buffer is on screen, so it has to be closed first too.
+func (a *App) switchBuffer(i int) {
+	switch {
+	case a.busy != nil:
+		a.errorf("%s; Esc to cancel", a.busy.what)
+		return
+	case a.find != nil:
+		a.errorf("close the match window first")
+		return
+	}
+	a.showBuffer(i)
+	// A following buffer may have grown while hidden, and the next frame
+	// will show its end; the message must say where that is.
+	if a.follow {
+		a.pinToTail()
+	}
+	a.infof("%s", a.fileInfoText())
+}
+
+// stepBuffer moves n buffers along, going round past either end as vim does.
+func (a *App) stepBuffer(n int64) {
+	count := int64(len(a.bufs))
+	if count < 2 {
+		a.infof("only one buffer")
+		return
+	}
+	a.switchBuffer(int(((int64(a.bufferIndex())+n)%count + count) % count))
+}
+
+// bufferTag says which of several files is on screen; one file needs no tag.
+func (a *App) bufferTag() string {
+	if len(a.bufs) < 2 {
+		return ""
+	}
+	return fmt.Sprintf("[%d/%d]", a.bufferIndex()+1, len(a.bufs))
 }

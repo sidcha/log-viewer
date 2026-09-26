@@ -81,6 +81,7 @@ be rebound independently.
 | `F` | follow the end of the file |
 | `zw` `zn` `zs` | wrap, line numbers, pin the status line |
 | `C-g` | file, position, size and syntax profile, like vi's |
+| `]` `[` | next / previous file, going round from the last to the first |
 | `zr` | re-index |
 | `S` `zS` | save the current view / the rules to a file |
 | `:` | command line |
@@ -104,6 +105,7 @@ be rebound independently.
 :w out.log        write the current view
 :mks rules.json   write the rules
 :source rules.json  load rules from a file
+:b2               go to the second file; :bn :bp next and previous
 :q                quit, offering to save the rules
 :q!               quit without asking
 ```

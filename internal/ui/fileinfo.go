@@ -31,11 +31,12 @@ func (a *App) fileInfoText() string {
 	if f := a.modeFlags(); len(f) > 0 {
 		flags = "[" + strings.Join(f, " ") + "]"
 	}
+	tag := a.bufferTag()
 
 	width, _ := a.scr.Size()
 	join := func() string {
 		var parts []string
-		for _, p := range []string{path, pos, size, profile, flags} {
+		for _, p := range []string{tag, path, pos, size, profile, flags} {
 			if p != "" {
 				parts = append(parts, p)
 			}

@@ -28,7 +28,7 @@ func (a *App) runCommandLine(text string) {
 		return
 	}
 
-	words, err := config.ParseLine(text)
+	words, err := config.ParseLine(splitBufferNumber(text))
 	if err != nil {
 		a.errorf("%v", err)
 		return
@@ -42,4 +42,15 @@ func (a *App) runCommandLine(text string) {
 		return
 	}
 	a.exec(cmd, 0)
+}
+
+// splitBufferNumber reads :b2 as :b 2, the way vim does.
+func splitBufferNumber(text string) string {
+	for _, name := range []string{"buffer", "b"} {
+		rest, ok := strings.CutPrefix(text, name)
+		if ok && rest != "" && rest[0] >= '0' && rest[0] <= '9' {
+			return name + " " + rest
+		}
+	}
+	return text
 }

@@ -253,6 +253,16 @@ func init() {
 		"reload": func(a *App, c call) {
 			a.reload()
 		},
+		"buffer-next": func(a *App, c call) { a.stepBuffer(c.n) },
+		"buffer-prev": func(a *App, c call) { a.stepBuffer(-c.n) },
+		"buffer-go": func(a *App, c call) {
+			n, err := strconv.Atoi(c.Args[0])
+			if err != nil || n < 1 || n > len(a.bufs) {
+				a.errorf("no buffer %s", c.Args[0])
+				return
+			}
+			a.switchBuffer(n - 1)
+		},
 
 		// ---------------------------------------------------------------- search
 		"search-forward": func(a *App, c call) {

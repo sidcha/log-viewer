@@ -12,13 +12,13 @@ import (
 // way of the common case of opening a log, looking, and quitting.
 
 // currentRuleFile captures what would be written right now.
-func (a *App) currentRuleFile() *ruleset.File {
-	return ruleset.From(a.rules, a.opts().Case)
+func (b *buffer) currentRuleFile() *ruleset.File {
+	return ruleset.From(b.rules, b.rulesCase)
 }
 
 // rulesDirty reports whether there is anything worth saving that is not already
 // on disk.
-func (a *App) rulesDirty() bool { return a.hasUnsavedRules(a.opts().Case) }
+func (a *App) rulesDirty() bool { return a.hasUnsavedRules() }
 
 // LoadRules reads a rules file and installs it.
 func (a *App) LoadRules(path string) error {
@@ -47,6 +47,7 @@ func (a *App) ApplyRuleFile(f *ruleset.File, path string) error {
 	}
 
 	a.applyRules(set, false)
+	a.rulesCase = cs
 	a.rulesPath = path
 	a.savedDigest = a.currentRuleFile().Digest()
 	return nil

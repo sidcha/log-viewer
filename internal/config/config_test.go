@@ -321,6 +321,7 @@ var commandLineOnly = map[string]bool{
 	"column-reset": true, // 0 already resets the horizontal offset
 	"redraw":       true, // C-l clears the search and repaints, as in vi
 	"rules-load":   true, // :source <path>; replacing every rule is not a keystroke
+	"buffer-go":    true, // :b 3; ] and [ already step one at a time
 }
 
 func TestEverySpecIsReachable(t *testing.T) {

@@ -380,9 +380,7 @@ func TestLoadRulesReportsABadFile(t *testing.T) {
 
 func TestSavedRulesUseTheSessionCase(t *testing.T) {
 	a, _ := newTestApp(t, numbered(40))
-	if err := a.cfg.Set("case", "sensitive"); err != nil {
-		t.Fatal(err)
-	}
+	a.setOption([]string{"case", "sensitive"})
 	a.addRule(filter.Only, "error", color.RGB{})
 
 	path := filepath.Join(t.TempDir(), "rules.json")

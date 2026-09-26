@@ -87,6 +87,10 @@ var Specs = []Spec{
 	{"redraw", "view", 0, 0, "force a full repaint"},
 	{"set", "view", 1, 2, "change a setting; with no value, toggle it"},
 
+	{"buffer-next", "buffer", 0, 1, "go to the next file; a count skips that many"},
+	{"buffer-prev", "buffer", 0, 1, "go to the previous file"},
+	{"buffer-go", "buffer", 1, 1, "go to file N, counting from 1"},
+
 	{"search-forward", "search", 0, 1, "search forwards (prompts when given no argument)"},
 	{"search-backward", "search", 0, 1, "search backwards (prompts when given no argument)"},
 	{"search-next", "search", 0, 0, "jump to the next match"},
@@ -217,6 +221,12 @@ var Aliases = map[string]string{
 	"n":          "search-next",
 	"N":          "search-prev",
 	"g":          "goto-line",
+	"bn":         "buffer-next",
+	"bnext":      "buffer-next",
+	"bp":         "buffer-prev",
+	"bprev":      "buffer-prev",
+	"b":          "buffer-go",
+	"buffer":     "buffer-go",
 }
 
 var specIndex = func() map[string]*Spec {

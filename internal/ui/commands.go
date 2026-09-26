@@ -84,6 +84,9 @@ func (a *App) setOption(args []string) {
 		a.errorf("%v", err)
 		return
 	}
+	if name == "case" {
+		a.rulesCase = a.opts().Case
+	}
 	a.opts()
 	a.infof("%s = %s", name, a.cfg.Str(name))
 }

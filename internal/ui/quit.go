@@ -19,9 +19,34 @@ import (
 
 // requestQuit is the quit command.
 func (a *App) requestQuit() {
-	a.askSaveRules(func() {
+	a.askSaveEachBuffer(0, func() {
 		a.askSaveStream(func() { a.quit = true })
 	})
+}
+
+// askSaveEachBuffer asks about the rules of buffer i and every one after it,
+// putting each on screen first so it is plain whose rules are in question.
+func (a *App) askSaveEachBuffer(i int, next func()) {
+	for ; i < len(a.bufs); i++ {
+		if a.bufs[i].hasUnsavedRules() {
+			break
+		}
+	}
+	if i == len(a.bufs) {
+		next()
+		return
+	}
+	a.showBuffer(i)
+	a.askSaveRules(func() { a.askSaveEachBuffer(i+1, next) })
+}
+
+// whose names the file a question is about, when there is more than one to
+// tell apart.
+func (a *App) whose() string {
+	if len(a.bufs) < 2 {
+		return ""
+	}
+	return filepath.Base(a.src.Name()) + ": "
 }
 
 // askSaveRules runs next once the rules are dealt with, and not at all if the
@@ -33,7 +58,7 @@ func (a *App) askSaveRules(next func()) {
 	}
 
 	if a.rulesPath != "" {
-		a.ask("Rules changed. Update "+filepath.Base(a.rulesPath)+"?",
+		a.ask(a.whose()+"Rules changed. Update "+filepath.Base(a.rulesPath)+"?",
 			nil,
 			choice{answerYes, "update", func() {
 				if a.saveRules(a.rulesPath) {
@@ -47,7 +72,7 @@ func (a *App) askSaveRules(next func()) {
 		return
 	}
 
-	a.ask("Save rules before quitting?",
+	a.ask(a.whose()+"Save rules before quitting?",
 		nil,
 		choice{answerYes, "save as…", func() { a.promptSaveRules(next) }},
 		choice{answerNo, "discard", next},
@@ -80,12 +105,17 @@ func (a *App) askAboutStream() bool {
 }
 
 func (a *App) askSaveStream(next func()) {
+	for i, b := range a.bufs {
+		if b.src.IsStdin() {
+			a.showBuffer(i)
+		}
+	}
 	if !a.streamAtRisk() || !a.askAboutStream() {
 		next()
 		return
 	}
 
-	a.ask("Piped input is not on disk. Keep it?",
+	a.ask(a.whose()+"Piped input is not on disk. Keep it?",
 		nil,
 		choice{answerYes, "save all…", func() { a.promptSaveStream(next) }},
 		choice{answerNo, "discard", next},
