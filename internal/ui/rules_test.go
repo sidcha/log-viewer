@@ -395,3 +395,19 @@ func TestSavedRulesUseTheSessionCase(t *testing.T) {
 		t.Errorf("case = %q, want sensitive", f.Case)
 	}
 }
+
+// TestConfigPresetsAreNotUnsavedRules: presets come from the configuration,
+// where they are already kept, so quitting an untouched session asks nothing.
+func TestConfigPresetsAreNotUnsavedRules(t *testing.T) {
+	a, _, _ := newTestAppConf(t, numbered(50), "rule highlight ERROR\n")
+	if a.rules.Len() != 1 {
+		t.Fatalf("%d rule(s) from the preset, want 1", a.rules.Len())
+	}
+	if a.rulesDirty() {
+		t.Error("a config preset counts as an unsaved rule")
+	}
+	run(a, "quit")
+	if a.confirm != nil || !a.quit {
+		t.Errorf("quit with only presets: confirm %+v, quit %v", a.confirm, a.quit)
+	}
+}

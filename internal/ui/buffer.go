@@ -118,6 +118,9 @@ func (a *App) AddBuffer(src *source.Source, idx *index.Index, prof highlight.Pro
 		set = set.Add(filter.Rule{Action: p.Action, M: p.M, Enabled: true, Color: p.Color})
 	}
 	a.applyRules(set, false)
+	// Presets are kept in the configuration already; only what is added
+	// on top of them is work that quitting could lose.
+	b.savedDigest = b.currentRuleFile().Digest()
 	return b.wake
 }
 
