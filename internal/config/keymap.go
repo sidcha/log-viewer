@@ -39,8 +39,9 @@ var Tables = []Table{
 	{"line", "", "line", "editing a line of text, at the prompt and in the match window"},
 	{"prompt", "line", "prompt", "at the bottom-row prompt"},
 	{"finder", "line", "finder", "in the match window"},
-	{"overlay", "", "panel", "in a panel: the help and the rule list"},
+	{"overlay", "", "panel", "in a panel: the help, the rule list and the buffer list"},
 	{"rules", "overlay", "rules", "in the rule list"},
+	{"buffers", "overlay", "buffers", "in the buffer list"},
 	{"confirm", "", "confirm", "answering a question on the status row"},
 }
 

@@ -263,6 +263,7 @@ func init() {
 			}
 			a.switchBuffer(n - 1)
 		},
+		"buffer-list": func(a *App, c call) { a.showBufferList() },
 
 		// ---------------------------------------------------------------- search
 		"search-forward": func(a *App, c call) {

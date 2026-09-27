@@ -15,6 +15,7 @@ type overlayKind int
 const (
 	ovHelp overlayKind = iota
 	ovRules
+	ovBuffers
 )
 
 // ovRow is one line of an overlay. item is the index into the underlying list
@@ -41,6 +42,8 @@ type overlay struct {
 	body int
 	// itemRows caches items; a panel's rows do not change once it is built.
 	itemRows []int
+	// typed is a buffer number typed so far, in the buffer list.
+	typed int
 }
 
 // page is how far Space and its counterparts move.

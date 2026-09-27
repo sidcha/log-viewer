@@ -63,8 +63,11 @@ func (p *prompt) screenRows(a *App, h int) int { return 1 }
 func (p *prompt) draw(a *App, top, w, h int)   { a.drawPrompt(top, w) }
 
 func (o *overlay) keyTable() string {
-	if o.kind == ovRules {
+	switch o.kind {
+	case ovRules:
 		return "rules"
+	case ovBuffers:
+		return "buffers"
 	}
 	return "overlay"
 }
@@ -197,8 +200,8 @@ func modeHandlers() map[string]handler {
 
 		// ----------------------------------------------------------- panel
 		"panel-close":     onPanel(func(a *App, o *overlay, c call) { a.ov = nil }),
-		"panel-up":        onPanel(func(a *App, o *overlay, c call) { o.moveSel(-int(c.n)) }),
-		"panel-down":      onPanel(func(a *App, o *overlay, c call) { o.moveSel(int(c.n)) }),
+		"panel-up":        onPanel(func(a *App, o *overlay, c call) { o.typed = 0; o.moveSel(-int(c.n)) }),
+		"panel-down":      onPanel(func(a *App, o *overlay, c call) { o.typed = 0; o.moveSel(int(c.n)) }),
 		"panel-page-up":   onPanel(func(a *App, o *overlay, c call) { o.scroll(-o.page()) }),
 		"panel-page-down": onPanel(func(a *App, o *overlay, c call) { o.scroll(o.page()) }),
 		"panel-top":       onPanel(func(a *App, o *overlay, c call) { o.scroll(-len(o.rows)) }),
@@ -219,6 +222,27 @@ func modeHandlers() map[string]handler {
 		"rules-recolour":     onRule(func(a *App, i int) { a.recolourRule(i) }),
 		"rules-enable-all":   onRuleList(func(a *App) { a.updateRuleList(a.rules.SetAll(true)) }),
 		"rules-disable-all":  onRuleList(func(a *App) { a.updateRuleList(a.rules.SetAll(false)) }),
+
+		// --------------------------------------------------------- buffers
+		"buffers-select": onPanel(func(a *App, o *overlay, c call) {
+			if o.kind != ovBuffers {
+				return
+			}
+			if o.typed > 0 {
+				a.pickBuffer(o.typed - 1)
+				return
+			}
+			if i := o.selected(); i >= 0 {
+				a.pickBuffer(i)
+			}
+		}),
+		"buffers-cancel": onPanel(func(a *App, o *overlay, c call) {
+			if o.typed > 0 {
+				o.typed = 0
+				return
+			}
+			a.ov = nil
+		}),
 
 		// --------------------------------------------------------- confirm
 		"confirm-yes":    onConfirm(answerYes),

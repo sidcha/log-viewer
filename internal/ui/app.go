@@ -333,6 +333,13 @@ func (a *App) key(ev *tcell.EventKey) {
 // building. Only the tables for the log itself take counts: in the match
 // window a digit is part of the pattern.
 func (a *App) dispatch(table string, k config.Key) {
+	if table == "buffers" && len(a.pending) == 0 && k.Mod == 0 && k.Key == tcell.KeyRune {
+		if d := k.Ch - '0'; d >= 0 && d <= 9 {
+			a.bufferDigit(int(d))
+			return
+		}
+	}
+
 	counts := table == "normal" || table == "visual"
 	if counts && len(a.pending) == 0 && k.Mod == 0 && k.Key == tcell.KeyRune {
 		if d := k.Ch - '0'; d >= 0 && d <= 9 && !(d == 0 && a.count == 0) {

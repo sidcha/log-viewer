@@ -90,6 +90,7 @@ var Specs = []Spec{
 	{"buffer-next", "buffer", 0, 1, "go to the next file; a count skips that many"},
 	{"buffer-prev", "buffer", 0, 1, "go to the previous file"},
 	{"buffer-go", "buffer", 1, 1, "go to file N, counting from 1"},
+	{"buffer-list", "buffer", 0, 0, "list the open files and pick one"},
 
 	{"search-forward", "search", 0, 1, "search forwards (prompts when given no argument)"},
 	{"search-backward", "search", 0, 1, "search backwards (prompts when given no argument)"},
@@ -161,6 +162,9 @@ var Specs = []Spec{
 	{"rules-enable-all", "rules", 0, 0, "enable every rule"},
 	{"rules-disable-all", "rules", 0, 0, "disable every rule"},
 
+	{"buffers-select", "buffers", 0, 0, "go to the selected file, or the number typed"},
+	{"buffers-cancel", "buffers", 0, 0, "drop a typed number, or close the list"},
+
 	{"confirm-yes", "confirm", 0, 0, "answer yes"},
 	{"confirm-no", "confirm", 0, 0, "answer no"},
 	{"confirm-other", "confirm", 0, 0, "take the third answer, when there is one"},
@@ -175,6 +179,7 @@ var groupContext = map[string]string{
 	"finder":  "finder",
 	"panel":   "panel",
 	"rules":   "rules",
+	"buffers": "buffers",
 	"confirm": "confirm",
 }
 
@@ -227,6 +232,8 @@ var Aliases = map[string]string{
 	"bprev":      "buffer-prev",
 	"b":          "buffer-go",
 	"buffer":     "buffer-go",
+	"buffers":    "buffer-list",
+	"files":      "buffer-list",
 }
 
 var specIndex = func() map[string]*Spec {
