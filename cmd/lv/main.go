@@ -52,7 +52,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "-V", "--version", "version":
-			fmt.Printf("lv %s\n", version)
+			fmt.Printf("lv %s\n", versionString())
 			return
 		case "config":
 			os.Exit(runConfig(os.Args[2:]))
@@ -77,7 +77,7 @@ func run() int {
 		return 2
 	}
 	if opt.showVer {
-		fmt.Printf("lv %s\n", version)
+		fmt.Printf("lv %s\n", versionString())
 		return 0
 	}
 
