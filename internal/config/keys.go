@@ -36,23 +36,38 @@ func FromEvent(ev *tcell.EventKey) Key {
 	return Key{Key: k, Mod: mod}
 }
 
-// The mouse wheel has no key code of its own in tcell. lv gives it two, past
-// every code tcell uses, so a wheel turn can be bound like any other key.
+// The mouse has no key codes of its own in tcell. lv gives the wheel and the
+// buttons some, past every code tcell uses, so a wheel turn or a click can be
+// bound like any other key. The names are vim's.
 const (
 	KeyWheelUp tcell.Key = 0x7f00 + iota
 	KeyWheelDown
+	KeyLeftMouse
+	KeyLeftMouse2
+	KeyLeftMouse3
+	KeyLeftDrag
+	KeyLeftRelease
+	KeyMiddleMouse
+	KeyRightMouse
 )
 
 var namedKeys = map[string]tcell.Key{
-	"wheelup":   KeyWheelUp,
-	"wheeldown": KeyWheelDown,
-	"enter":     tcell.KeyEnter,
-	"cr":        tcell.KeyEnter,
-	"return":    tcell.KeyEnter,
-	"tab":       tcell.KeyTab,
-	"btab":      tcell.KeyBacktab,
-	"escape":    tcell.KeyEscape,
-	"esc":       tcell.KeyEscape,
+	"wheelup":     KeyWheelUp,
+	"wheeldown":   KeyWheelDown,
+	"leftmouse":   KeyLeftMouse,
+	"2-leftmouse": KeyLeftMouse2,
+	"3-leftmouse": KeyLeftMouse3,
+	"leftdrag":    KeyLeftDrag,
+	"leftrelease": KeyLeftRelease,
+	"middlemouse": KeyMiddleMouse,
+	"rightmouse":  KeyRightMouse,
+	"enter":       tcell.KeyEnter,
+	"cr":          tcell.KeyEnter,
+	"return":      tcell.KeyEnter,
+	"tab":         tcell.KeyTab,
+	"btab":        tcell.KeyBacktab,
+	"escape":      tcell.KeyEscape,
+	"esc":         tcell.KeyEscape,
 	// tcell reports both backspace codes, DEL and ^H, as KeyBackspace, so
 	// that is the key a binding has to name to ever match.
 	"bspace":    tcell.KeyBackspace,
@@ -87,6 +102,9 @@ var keyNames = func() map[tcell.Key]string {
 		}
 	}
 	m[KeyWheelUp], m[KeyWheelDown] = "WheelUp", "WheelDown"
+	m[KeyLeftMouse], m[KeyLeftMouse2], m[KeyLeftMouse3] = "LeftMouse", "2-LeftMouse", "3-LeftMouse"
+	m[KeyLeftDrag], m[KeyLeftRelease] = "LeftDrag", "LeftRelease"
+	m[KeyMiddleMouse], m[KeyRightMouse] = "MiddleMouse", "RightMouse"
 	return m
 }()
 

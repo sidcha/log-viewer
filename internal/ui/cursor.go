@@ -250,8 +250,11 @@ func (a *App) scrollColumns(steps int) {
 // ------------------------------------------------------------ column motions
 
 // cursorText returns the text of the line the cursor is on.
-func (a *App) cursorText() []byte {
-	ln, err := a.activeView().At(a.cursorLine(), a.linebuf[:0])
+func (a *App) cursorText() []byte { return a.lineText(a.cursorLine()) }
+
+// lineText returns the text of view line i, in a buffer the next call reuses.
+func (a *App) lineText(i int64) []byte {
+	ln, err := a.activeView().At(i, a.linebuf[:0])
 	if err != nil {
 		return nil
 	}

@@ -95,9 +95,10 @@ bare run is rejected rather than silently bound as a sequence, so a misspelled
 key name tells you about itself.
 
 `C-` is Control, `M-` is Alt and `S-` is Shift — so `S-PgUp` and `C-Up` bind as
-you would expect. The mouse wheel is two more keys, `<WheelUp>` and
-`<WheelDown>`, bound in each table like the rest: `bind <WheelDown> scroll-down
-5`. No default binding uses Alt: a key you have to deduce is a key
+you would expect. The mouse is more keys, bound in each table like the rest:
+the wheel is `<WheelUp>` and `<WheelDown>` (`bind <WheelDown> scroll-down 5`),
+and the buttons are `<LeftMouse>`, `<2-LeftMouse>`, `<3-LeftMouse>`,
+`<LeftDrag>`, `<LeftRelease>`, `<MiddleMouse>` and `<RightMouse>`. No default binding uses Alt: a key you have to deduce is a key
 nobody presses. lv's own commands sit under `z`, leaving the vi keys alone.
 
 `S-Space` is the one thing that cannot be bound. Shift does not change the space

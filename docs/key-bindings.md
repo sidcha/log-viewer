@@ -59,6 +59,24 @@ what is underneath it.
 of `yy`, exactly as in vim. Visual mode has its own binding table, so either can
 be rebound independently.
 
+### The mouse
+
+| | |
+|---|---|
+| click | put the cursor there, dropping any selection |
+| drag, `S-click` | select from the cursor to the pointer |
+| double-click | select the word |
+| triple-click | select the line |
+| wheel | scroll |
+
+A drag held against the top or bottom row, or the left or right column, keeps
+scrolling that way until you let go or move off the edge. Releasing the button
+leaves the selection up for `y`; to copy as soon as you let go, add
+`bind -T visual <LeftRelease> yank`. The keys are `<LeftMouse>`,
+`<2-LeftMouse>`, `<3-LeftMouse>`, `<LeftDrag>`, `<LeftRelease>`,
+`<MiddleMouse>` and `<RightMouse>`, with `S-` and `M-` where the terminal
+reports them; `set mouse off` hands the mouse back to the terminal.
+
 ### Searching and rules
 
 | | |

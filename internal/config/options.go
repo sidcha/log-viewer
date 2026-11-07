@@ -46,6 +46,7 @@ type Options struct {
 	DetectThreshold  int           `setting:"detect-threshold"`
 	DetectWait       time.Duration `setting:"detect-wait"`
 	Mouse            bool          `setting:"mouse"`
+	DoubleClickTime  time.Duration `setting:"double-click-time"`
 	Gutter           string        `setting:"gutter"`
 	MessageTimeout   time.Duration `setting:"message-timeout"`
 	ScrollOff        int           `setting:"scroll-off"`

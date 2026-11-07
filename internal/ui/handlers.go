@@ -220,6 +220,12 @@ func init() {
 			a.yank(c.count)
 		},
 
+		// ----------------------------------------------------------------- mouse
+		"mouse-cursor":      func(a *App, c call) { a.mouseCursor() },
+		"mouse-select":      func(a *App, c call) { a.mouseSelect() },
+		"mouse-select-word": func(a *App, c call) { a.mouseSelectWord() },
+		"mouse-select-line": func(a *App, c call) { a.mouseSelectLine() },
+
 		// ------------------------------------------------------------------ view
 		"follow-toggle": func(a *App, c call) {
 			a.follow = !a.follow

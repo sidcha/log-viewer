@@ -52,6 +52,7 @@ type App struct {
 	opt     config.Options
 	optVer  uint64
 	mouseOn bool
+	ptr     pointer
 
 	search  searchState
 	prompt  *prompt
@@ -144,7 +145,7 @@ func (a *App) reconfigure() {
 	a.lay.setTab(o.TabWidth)
 	if o.Mouse != a.mouseOn {
 		if o.Mouse {
-			a.scr.EnableMouse(tcell.MouseButtonEvents)
+			a.scr.EnableMouse(tcell.MouseDragEvents)
 		} else {
 			a.scr.DisableMouse()
 		}
@@ -377,20 +378,6 @@ func (a *App) pendingKeys() string {
 		out = strconv.FormatInt(a.count, 10)
 	}
 	return out + config.SequenceString(a.pending)
-}
-
-// mouse turns a wheel turn into a key, so what it does is a binding in
-// whichever table has the keyboard.
-func (a *App) mouse(ev *tcell.EventMouse) {
-	if !a.opts().Mouse {
-		return
-	}
-	switch {
-	case ev.Buttons()&tcell.WheelUp != 0:
-		a.dispatch(a.keyTable(), config.Key{Key: config.KeyWheelUp})
-	case ev.Buttons()&tcell.WheelDown != 0:
-		a.dispatch(a.keyTable(), config.Key{Key: config.KeyWheelDown})
-	}
 }
 
 // --------------------------------------------------------------- positioning

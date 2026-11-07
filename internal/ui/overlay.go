@@ -247,7 +247,7 @@ func (a *App) showHelp() {
 			groups[g] = append(groups[g], b)
 		}
 	}
-	for _, g := range []string{"motion", "search", "filter", "view", "select", "file", "other"} {
+	for _, g := range []string{"motion", "search", "filter", "view", "select", "mouse", "file", "other"} {
 		o.helpSection(strings.ToUpper(g), groups[g])
 	}
 

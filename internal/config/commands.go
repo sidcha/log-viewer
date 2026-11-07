@@ -78,6 +78,11 @@ var Specs = []Spec{
 	{"yank", "select", 0, 0, "copy the selection, or the current line"},
 	{"yank-line", "select", 0, 1, "copy whole lines"},
 
+	{"mouse-cursor", "mouse", 0, 0, "cursor to the pointer, dropping any selection"},
+	{"mouse-select", "mouse", 0, 0, "select from the cursor to the pointer, scrolling while it is held at an edge"},
+	{"mouse-select-word", "mouse", 0, 0, "select the word under the pointer"},
+	{"mouse-select-line", "mouse", 0, 0, "select the line under the pointer"},
+
 	{"follow-toggle", "view", 0, 0, "follow the end of the file, like tail -f"},
 	{"wrap-toggle", "view", 0, 0, "wrap long lines instead of truncating them"},
 	{"line-numbers-toggle", "view", 0, 0, "show source line numbers in the gutter"},
